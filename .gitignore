@@ -2,6 +2,7 @@
 .kotlin/
 **/build/
 local.properties
+neis.properties
 .local-tools/
 .idea/
 *.iml

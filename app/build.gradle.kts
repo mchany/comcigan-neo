@@ -1,9 +1,19 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     kotlin("android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 val emulatorSmoke = providers.gradleProperty("emulatorSmoke").orNull == "true"
+val neisProperties = Properties().apply {
+    val file = rootProject.file("neis.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+val neisApiKey = providers.environmentVariable("NEIS_API_KEY").orNull
+    ?: neisProperties.getProperty("NEIS_API_KEY", "")
+val neisKeyLiteral = "\"" + neisApiKey.replace("\\", "\\\\").replace("\"", "\\\"")
+    .replace("\r", "").replace("\n", "") + "\""
 android {
     namespace = "io.github.mchany.comciganneo"
     compileSdk = 35
@@ -12,8 +22,9 @@ android {
         manifestPlaceholders["appLabel"] = if (emulatorSmoke) "컴시간neo 테스트" else "@string/app_name"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.1.0-beta"
+        versionCode = 3
+        versionName = "0.2.0-beta"
+        buildConfigField("String", "NEIS_API_KEY", neisKeyLiteral)
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true; buildConfig = true }
@@ -43,5 +54,8 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
+    androidTestImplementation("androidx.room:room-runtime:2.7.1")
+    androidTestImplementation("androidx.room:room-ktx:2.7.1")
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
