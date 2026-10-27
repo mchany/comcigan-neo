@@ -4,4 +4,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "ComciganNeo"
-include(":app", ":core:model", ":core:comcigan", ":core:data")
+include(":app", ":core:model", ":core:comcigan", ":core:neis", ":core:data")

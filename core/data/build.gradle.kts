@@ -15,6 +15,7 @@ ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 dependencies {
     api(project(":core:model"))
     implementation(project(":core:comcigan"))
+    implementation(project(":core:neis"))
     implementation("androidx.room:room-runtime:2.7.1")
     implementation("androidx.room:room-ktx:2.7.1")
     ksp("androidx.room:room-compiler:2.7.1")

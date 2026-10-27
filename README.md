@@ -3,9 +3,9 @@
 Kotlin과 Jetpack Compose Material 3로 제작한 컴시간알리미 비공식 오픈소스 Android 클라이언트입니다.
 시간표 파싱에는 [hegelty/pycomcigan](https://github.com/hegelty/pycomcigan)의 MIT 라이선스 Python 파서를 Kotlin으로 이식해 사용했습니다.
 
-현재 버전: **0.1.0-beta — 베타**. Android 8.0(API 26) 이상을 대상으로 합니다.
+현재 개발 버전: **0.2.0-beta — 급식 기능 추가**. Android 8.0(API 26) 이상을 대상으로 합니다.
 
-[0.1.0 베타 다운로드](https://github.com/mchany/comcigan-neo/releases/tag/v0.1.0-beta)
+[이전 0.1.0 베타 다운로드](https://github.com/mchany/comcigan-neo/releases/tag/v0.1.0-beta)
 
 ## 구현한 기능
 
@@ -16,6 +16,8 @@ Kotlin과 Jetpack Compose Material 3로 제작한 컴시간알리미 비공식 �
 - Material You 동적 색상(Android 12 이상), 밝게/어둡게/시스템 테마
 - Room 오프라인 시간표 캐시, 수동 새로고침, 5분 캐시 후 앱 사용 중 갱신
 - 교사명 표시 설정, 캐시 삭제, 오픈소스 고지
+- 나이스 학교 연결과 날짜별 조식·중식·석식, 오늘 중식 카드
+- 급식 메뉴·열량·알레르기 번호·영양·원산지, 주간 캐시와 오프라인 조회
 
 알림·위젯·즐겨찾는 여러 학급·교사용 시간표는 아직 구현하지 않았습니다.
 시간표는 제공자가 게시한 자료에 한하며, 다음 주 미게시·서버 오류를 화면에서 구분합니다.
@@ -28,7 +30,7 @@ Android Studio에서 저장소를 열어 SDK를 지정하거나 로컬 `local.pr
 Gradle 8.11.1 래퍼와 SHA-256 검증값을 포함합니다.
 
 ```sh
-./gradlew :core:model:test :core:comcigan:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+./gradlew :core:model:test :core:comcigan:test :core:neis:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
 Windows에서는 `gradlew.bat`을 사용하세요. APK는 `app/build/outputs/apk/debug/app-debug.apk`에 생성됩니다.
@@ -50,6 +52,41 @@ Android Studio 에뮬레이터에서 실제 서버를 사용하는 UI 검증은 
 학교 선택, 주간 전환, 금요일 열 표시, 다크 모드, 교사명 설정과 Activity 재생성을 검증합니다.
 일반 APK가 필요하면 `-PemulatorSmoke=true` 없이 다시 빌드하세요.
 
+## 급식 설정
+
+급식은 [나이스 교육정보 개방 포털](https://open.neis.go.kr)의 공식 API를 사용합니다.
+**인증키가 필요합니다.** 키 없는 호출은 5건 샘플로 제한되므로 앱은 이를 주간 전체 식단으로 사용하지 않습니다.
+
+1. 앱의 **급식 → 나이스 인증키 설정**에서 발급받은 키를 저장합니다. 이미 기본 키가 포함된 빌드는 이 과정을 생략합니다.
+2. **급식 학교 연결**에서 검색 결과의 학교명·교육청·주소를 확인하고 연결합니다. 컴시간 학교 코드는 나이스 코드와 별도입니다.
+3. 급식 탭에서 날짜와 조식·중식·석식을 선택합니다. 오늘 화면에는 중식 카드가 표시됩니다.
+
+배포자가 기본 키를 넣으려면 환경 변수 `NEIS_API_KEY` 또는 Git에서 제외되는 루트 `neis.properties`에 설정합니다.
+
+```properties
+NEIS_API_KEY=발급받은_인증키
+```
+
+직접 입력한 키는 앱 내부 DataStore에 저장하며 기기 백업에서 제외됩니다. 기본 키는 APK에서 추출할 수 있으므로
+비밀 보관 수단이 아닙니다. 운영 한도·공유 정책을 확인하고 배포하세요. 키와 인증 URL은 로그에 기록하지 않습니다.
+
+급식은 한 주씩 저장합니다. 식단이 있는 날짜는 6시간, 자료 없는 날짜는 1시간 뒤 앱 사용 중 갱신하고,
+수동 새로고침으로 즉시 다시 조회할 수 있습니다. 자료 없음만으로 급식 미실시·휴교를 단정하지 않습니다.
+API의 수정일자는 포털 연계 일자이므로 앱에는 별도로 마지막 성공 조회 시각을 표시합니다.
+
+명시적인 Kotlin 실서버 검증은 다음 명령으로 실행합니다. 키가 없으면 해당 날짜의 샘플만 검사하고,
+키가 있으면 이번 주 전체 조회를 검사합니다. 일반 테스트는 실서버에 연결하지 않습니다.
+
+```sh
+./gradlew :core:neis:run --args="중일고등학교"
+```
+
+급식 UI와 0.1.0-beta DB 업그레이드 검사는 별도 `.smoke` 패키지에서 실행합니다. UI 테스트는 합성 캐시를 사용합니다.
+
+```sh
+./gradlew :app:connectedDebugAndroidTest -PemulatorSmoke=true -Pandroid.testInstrumentationRunnerArguments.class=io.github.mchany.comciganneo.MealMigrationTest,io.github.mchany.comciganneo.MealUiTest
+```
+
 ## 구조
 
 | 모듈 | 역할 |
@@ -57,6 +94,7 @@ Android Studio 에뮬레이터에서 실제 서버를 사용하는 UI 검증은 
 | `app` | Compose 화면, Material 3 테마, ViewModel |
 | `core:model` | 학교·학급·수업·주차 모델 |
 | `core:comcigan` | 순수 Kotlin/JVM 파서, OkHttp 클라이언트, 실서버 검증 CLI |
+| `core:neis` | JDK 17/OkHttp 기반 나이스 학교·급식 API, 오류·완전성 검증 |
 | `core:data` | Room 캐시와 DataStore 설정 |
 
 파싱 로직은 [pycomcigan](https://github.com/hegelty/pycomcigan)의 MIT 코드를 참고해 Kotlin으로 이식했습니다.
@@ -66,6 +104,9 @@ Android Studio 에뮬레이터에서 실제 서버를 사용하는 UI 검증은 
 컴시간 원본 연결은 HTTP `comci.net:4082`를 사용합니다. 해당 호스트에만 cleartext를 허용합니다.
 앱 전용 백엔드·계정·광고·분석 SDK는 사용하지 않습니다. 선택한 학교·학급과 시간표는 앱 내부에 저장됩니다.
 학교 검색어·학교 코드는 조회를 위해 컴시간 서버로 전송됩니다.
+급식 검색어·교육청 및 표준학교코드·조회 기간·인증키는 HTTPS로 나이스 서버에 전송됩니다.
+급식 클라이언트의 API 구조·필드 매핑은 MIT 라이선스의 [kimcore/neis.kt](https://github.com/kimcore/neis.kt)를 참고했습니다.
+Ktor 런타임이나 JitPack 의존성을 추가하지 않고 기존 환경에 맞게 구현했습니다.
 
 ## 검증과 제약
 

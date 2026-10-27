@@ -15,7 +15,7 @@ class MainActivity : ComponentActivity() {
         object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                NeoViewModel(AppRepository(applicationContext)) as T
+                NeoViewModel(AppRepository(applicationContext, BuildConfig.NEIS_API_KEY)) as T
         }
     }
     override fun onCreate(savedInstanceState: Bundle?) {

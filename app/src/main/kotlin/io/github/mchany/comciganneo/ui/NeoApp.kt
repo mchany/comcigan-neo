@@ -45,11 +45,12 @@ import java.util.Locale
 private val Korean = Locale.KOREAN
 private val DateLabel = DateTimeFormatter.ofPattern("M월 d일 EEEE", Korean)
 private val ShortDate = DateTimeFormatter.ofPattern("M.d", Korean)
+private enum class NeoTab { TODAY, WEEK, MEALS, SETTINGS }
 
 @Composable
 fun NeoApp(viewModel: NeoViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var tab by rememberSaveable { mutableStateOf(NeoTab.TODAY) }
     var detail by remember { mutableStateOf<LessonSlot?>(null) }
     var now by remember { mutableStateOf(ZonedDateTime.now(SchoolZone)) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -77,34 +78,44 @@ fun NeoApp(viewModel: NeoViewModel) {
                                     Text("${selection.label}  ▾", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                                 }
                             }, actions = {
-                                if (tab != 2) IconButton(onClick = viewModel::refresh, enabled = !state.loading) {
-                                    Icon(Icons.Rounded.Refresh, "시간표 새로고침")
+                                if (tab != NeoTab.SETTINGS) IconButton(onClick = {
+                                    if (tab == NeoTab.MEALS) viewModel.refreshMeals() else {
+                                        viewModel.refresh()
+                                        if (tab == NeoTab.TODAY) viewModel.refreshMeals()
+                                    }
+                                }, enabled = if (tab == NeoTab.MEALS) state.mealSchool != null && !state.meal.loading else !state.loading) {
+                                    Icon(Icons.Rounded.Refresh, if (tab == NeoTab.MEALS) "급식 새로고침" else "시간표 새로고침")
                                 }
                             })
                         },
                         bottomBar = {
                             NavigationBar {
-                                listOf("오늘" to Icons.Rounded.Today, "주간" to Icons.Rounded.CalendarViewWeek, "설정" to Icons.Rounded.Settings)
+                                listOf("오늘" to Icons.Rounded.Today, "주간" to Icons.Rounded.CalendarViewWeek,
+                                    "급식" to Icons.Rounded.Restaurant, "설정" to Icons.Rounded.Settings)
                                     .forEachIndexed { index, (label, icon) ->
-                                        NavigationBarItem(selected = tab == index, onClick = {
+                                        NavigationBarItem(selected = tab.ordinal == index, onClick = {
                                             if (index == 0) viewModel.week(0)
-                                            tab = index
+                                            tab = NeoTab.entries[index]
                                         }, icon = { Icon(icon, null) }, label = { Text(label) })
                                     }
                             }
                         },
                     ) { padding ->
                         Column(Modifier.padding(padding).fillMaxSize()) {
-                            if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                            if (state.loading && tab != NeoTab.MEALS && tab != NeoTab.SETTINGS) LinearProgressIndicator(Modifier.fillMaxWidth())
                             when (tab) {
-                                0 -> TodayScreen(state, now, viewModel::refresh) { detail = it }
-                                1 -> WeekScreen(state, viewModel::week, viewModel::refresh) { detail = it }
-                                else -> SettingsScreen(state, viewModel)
+                                NeoTab.TODAY -> TodayScreen(state, now, viewModel::refresh, onMeal = {
+                                    viewModel.mealDate(schoolToday()); tab = NeoTab.MEALS
+                                }, onMealRefresh = viewModel::refreshMeals) { detail = it }
+                                NeoTab.WEEK -> WeekScreen(state, viewModel::week, viewModel::refresh) { detail = it }
+                                NeoTab.MEALS -> MealScreen(state, viewModel)
+                                NeoTab.SETTINGS -> SettingsScreen(state, viewModel)
                             }
                         }
                     }
                 }
             }
+            if (state.meal.connecting) MealConnectionDialog(state, viewModel)
             detail?.let { slot ->
                 ModalBottomSheet(onDismissRequest = { detail = null }) {
                     Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -204,7 +215,8 @@ private fun NumberPicker(label: String, selected: Int, values: List<Int>, modifi
 }
 
 @Composable
-private fun TodayScreen(state: NeoState, now: ZonedDateTime, refresh: () -> Unit, onLesson: (LessonSlot) -> Unit) {
+private fun TodayScreen(state: NeoState, now: ZonedDateTime, refresh: () -> Unit, onMeal: () -> Unit,
+    onMealRefresh: () -> Unit, onLesson: (LessonSlot) -> Unit) {
     val today = now.toLocalDate()
     val lessons = state.snapshot?.slots?.filter { it.date == today.toString() }.orEmpty()
     val next = lessons.firstOrNull { slot ->
@@ -216,6 +228,7 @@ private fun TodayScreen(state: NeoState, now: ZonedDateTime, refresh: () -> Unit
             Spacer(Modifier.height(4.dp))
             Text("오늘의 시간표", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        item { TodayMealCard(state, onMeal, onMealRefresh) }
         state.error?.let { item { MessageCard(it, state.snapshot != null, refresh) } }
         if (state.snapshot == null) {
             if (!state.loading && state.error == null) item { EmptyState("시간표를 준비해 주세요", "새로고침해서 수업을 가져올 수 있어요.") }
@@ -364,8 +377,11 @@ private fun SettingsScreen(state: NeoState, viewModel: NeoViewModel) {
             }
         }
         item {
+            SettingsGroup("급식") { MealSettings(state, viewModel) }
+        }
+        item {
             SettingsGroup("데이터") {
-                ListItem(headlineContent = { Text("저장된 시간표 삭제") }, supportingContent = { Text("학교·학급과 화면 설정은 유지돼요") },
+                ListItem(headlineContent = { Text("저장된 시간표·급식 삭제") }, supportingContent = { Text("학교·학급과 화면 설정은 유지돼요") },
                     modifier = Modifier.clickable { clearDialog = true }, trailingContent = { Icon(Icons.Rounded.DeleteOutline, null) })
                 Text("앱을 열면 저장된 시간표를 먼저 보여주고, 마지막 조회 후 5분이 지나면 갱신해요. 알림과 위젯은 후속 버전에서 지원할 예정입니다.", Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -380,7 +396,7 @@ private fun SettingsScreen(state: NeoState, viewModel: NeoViewModel) {
         }
         state.error?.let { item { MessageCard(it) } }
     }
-    if (clearDialog) AlertDialog(onDismissRequest = { clearDialog = false }, title = { Text("저장된 시간표를 삭제할까요?") },
+    if (clearDialog) AlertDialog(onDismissRequest = { clearDialog = false }, title = { Text("저장된 시간표와 급식을 삭제할까요?") },
         text = { Text("다음 조회에는 인터넷 연결이 필요해요.") }, confirmButton = { TextButton(onClick = { viewModel.clearCache(); clearDialog = false }) { Text("삭제") } },
         dismissButton = { TextButton(onClick = { clearDialog = false }) { Text("취소") } })
     if (licenses) {

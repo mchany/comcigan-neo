@@ -50,4 +50,6 @@ data class AppPreferences(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val dynamicColor: Boolean = true,
     val showTeachers: Boolean = true,
+    val mealSchools: Map<String, NeisSchoolRef> = emptyMap(),
+    val mealKeyConfigured: Boolean = false,
 )
