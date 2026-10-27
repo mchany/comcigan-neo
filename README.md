@@ -3,9 +3,14 @@
 Kotlin과 Jetpack Compose Material 3로 제작한 컴시간알리미 비공식 오픈소스 Android 클라이언트입니다.
 시간표 파싱에는 [hegelty/pycomcigan](https://github.com/hegelty/pycomcigan)의 MIT 라이선스 Python 파서를 Kotlin으로 이식해 사용했습니다.
 
-현재 개발 버전: **0.2.1-beta — 시간표·급식 화면 개선**. Android 8.0(API 26) 이상을 대상으로 합니다.
+현재 배포 버전: **0.2.1-beta — 시간표·급식 화면 개선**. Android 8.0(API 26) 이상에서 설치할 수 있습니다.
 
-[이전 0.1.0 베타 다운로드](https://github.com/mchany/comcigan-neo/releases/tag/v0.1.0-beta)
+[![APK 다운로드 · 0.2.1-beta](https://img.shields.io/badge/APK_다운로드-0.2.1--beta-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/download/v0.2.1-beta/comcigan-neo-0.2.1-beta.apk)
+[![릴리즈 노트 · 0.2.1-beta](https://img.shields.io/badge/릴리즈_노트-0.2.1--beta-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/tag/v0.2.1-beta)
+
+배포용 서명을 적용한 APK이며, **나이스 인증키가 포함되어 별도 키 입력 없이 급식을 조회할 수 있습니다.**
+APK를 내려받아 설치한 뒤 학교·학급을 선택하고, 급식 탭에서 급식 학교를 연결하세요.
+0.1.0-beta와 동일한 배포 인증서로 서명했으며, APK의 SHA-256은 릴리즈에 첨부된 [SHA256SUMS.txt](https://github.com/mchany/comcigan-neo/releases/download/v0.2.1-beta/SHA256SUMS.txt)에서 확인할 수 있습니다.
 
 ## 구현한 기능
 
@@ -56,7 +61,8 @@ Android Studio 에뮬레이터에서 실제 서버를 사용하는 UI 검증은 
 ## 급식 설정
 
 급식은 [나이스 교육정보 개방 포털](https://open.neis.go.kr)의 공식 API를 사용합니다.
-**인증키가 필요합니다.** 키 없는 호출은 5건 샘플로 제한되므로 앱은 이를 주간 전체 식단으로 사용하지 않습니다.
+**공식 릴리즈 APK에는 인증키가 포함되어 있습니다.** 사용자가 별도로 키를 발급하거나 입력할 필요가 없습니다.
+직접 빌드할 때는 아래 방법으로 키를 설정하세요. 키 없는 호출은 5건 샘플로 제한되므로 앱은 이를 주간 전체 식단으로 사용하지 않습니다.
 
 1. **급식 학교 연결**에서 검색 결과의 학교명·교육청·주소를 확인하고 연결합니다. 컴시간 학교 코드는 나이스 코드와 별도입니다.
 2. 급식 탭에서 날짜와 조식·중식·석식을 선택합니다. 오늘 화면은 시간표에 집중합니다.
