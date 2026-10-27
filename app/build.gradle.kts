@@ -3,11 +3,13 @@ plugins {
     kotlin("android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+val emulatorSmoke = providers.gradleProperty("emulatorSmoke").orNull == "true"
 android {
     namespace = "io.github.mchany.comciganneo"
     compileSdk = 35
     defaultConfig {
-        applicationId = "io.github.mchany.comciganneo"
+        applicationId = "io.github.mchany.comciganneo" + if (emulatorSmoke) ".smoke" else ""
+        manifestPlaceholders["appLabel"] = if (emulatorSmoke) "컴시간neo 테스트" else "@string/app_name"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
@@ -18,6 +20,9 @@ android {
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     buildTypes { release { isMinifyEnabled = false } }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+}
+androidComponents {
+    beforeVariants(selector().withBuildType("debug")) { it.enableAndroidTest = emulatorSmoke }
 }
 kotlin { jvmToolchain(17) }
 dependencies {
@@ -35,6 +40,8 @@ dependencies {
     testImplementation(kotlin("test-junit"))
     androidTestImplementation(platform("androidx.compose:compose-bom:2025.04.01"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

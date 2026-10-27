@@ -21,6 +21,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -299,27 +301,32 @@ private fun WeekGrid(snapshot: TimetableSnapshot, showTeachers: Boolean, onLesso
     val days = (0..4).map { start.plusDays(it.toLong()) }
     val index = snapshot.slots.associateBy { it.date to it.period }
     val periods = snapshot.slots.maxOfOrNull { it.period } ?: 0
-    // Allow horizontal scrolling instead of truncating all five columns on narrow displays.
-    Column(Modifier.horizontalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Spacer(Modifier.width(36.dp))
-            days.forEach { date ->
-                Text("${date.format(DateTimeFormatter.ofPattern("E", Korean))}\n${date.format(ShortDate)}", Modifier.width(78.dp).padding(8.dp),
-                    style = MaterialTheme.typography.labelLarge, color = if (date == schoolToday()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        for (period in 1..periods) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("$period", Modifier.width(36.dp), style = MaterialTheme.typography.labelLarge)
+    val largeText = LocalDensity.current.fontScale > 1.2f
+    // Fit five days on typical phones; retain readable scrolling cells for large text.
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val periodWidth = if (largeText) 36.dp else 28.dp
+        val cellWidth = ((maxWidth - periodWidth - 30.dp) / 5).coerceAtLeast(if (largeText) 78.dp else 52.dp)
+        Column(Modifier.testTag("week-table-${snapshot.weekStart}").horizontalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Spacer(Modifier.width(periodWidth))
                 days.forEach { date ->
-                    val slot = index[date.toString() to period]
-                    Surface(onClick = { slot?.let(onLesson) }, enabled = slot != null, modifier = Modifier.width(78.dp).heightIn(min = 100.dp),
-                        color = if (slot?.changed == true) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        shape = RoundedCornerShape(14.dp)) {
-                        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                            Text(slot?.current?.subject ?: "—", style = MaterialTheme.typography.labelLarge, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                            if (showTeachers) slot?.current?.teacher?.let { Text(it, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                            if (slot?.changed == true) Text("변경", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Text("${date.format(DateTimeFormatter.ofPattern("E", Korean))}\n${date.format(ShortDate)}", Modifier.width(cellWidth).padding(8.dp),
+                        style = MaterialTheme.typography.labelLarge, color = if (date == schoolToday()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            for (period in 1..periods) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("$period", Modifier.width(periodWidth), style = MaterialTheme.typography.labelLarge)
+                    days.forEach { date ->
+                        val slot = index[date.toString() to period]
+                        Surface(onClick = { slot?.let(onLesson) }, enabled = slot != null, modifier = Modifier.width(cellWidth).heightIn(min = 100.dp),
+                            color = if (slot?.changed == true) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = RoundedCornerShape(14.dp)) {
+                            Column(Modifier.padding(horizontal = 8.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Text(slot?.current?.subject ?: "—", style = MaterialTheme.typography.labelLarge, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                                if (showTeachers) slot?.current?.teacher?.let { Text(it, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                                if (slot?.changed == true) Text("변경", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }

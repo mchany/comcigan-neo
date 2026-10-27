@@ -37,6 +37,16 @@ GitHub Actions도 같은 검증 후 디버그 APK를 artifact로 제공합니다
 ./gradlew :core:comcigan:run --args="경기북과학고"
 ```
 
+Android Studio 에뮬레이터에서 실제 서버를 사용하는 UI 검증은 별도 앱 ID로 실행합니다.
+일반 앱의 학교·학급·테마 설정을 건드리지 않도록 `-PemulatorSmoke=true`일 때만 계측 테스트를 활성화합니다.
+
+```sh
+./gradlew :app:connectedDebugAndroidTest -PemulatorSmoke=true -Pandroid.testInstrumentationRunnerArguments.class=io.github.mchany.comciganneo.EmulatorSmokeTest
+```
+
+학교 선택, 주간 전환, 금요일 열 표시, 다크 모드, 교사명 설정과 Activity 재생성을 검증합니다.
+일반 APK가 필요하면 `-PemulatorSmoke=true` 없이 다시 빌드하세요.
+
 ## 구조
 
 | 모듈 | 역할 |
