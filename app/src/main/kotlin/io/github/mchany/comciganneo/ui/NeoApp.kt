@@ -152,7 +152,7 @@ private fun SetupScreen(state: NeoState, viewModel: NeoViewModel) {
             }
             item {
                 OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text("학교 이름") },
-                    placeholder = { Text("예: 경기북과학고") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("예: 중일고등학교") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp), leadingIcon = { Icon(Icons.Rounded.Search, null) },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = { viewModel.search(query) }))

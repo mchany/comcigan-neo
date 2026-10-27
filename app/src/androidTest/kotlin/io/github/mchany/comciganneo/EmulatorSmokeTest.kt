@@ -41,10 +41,10 @@ class EmulatorSmokeTest {
             compose.onNodeWithText("설정").performClick()
             compose.onNodeWithText("변경").performClick()
         }
-        compose.onNode(hasSetTextAction()).performTextReplacement("경기북과학고")
+        compose.onNode(hasSetTextAction()).performTextReplacement("중일고등학교")
         compose.onNodeWithText("학교 검색").performClick()
-        waitFor(hasText("경기북과학고등학교"))
-        compose.onNodeWithText("경기북과학고등학교").performScrollTo().performClick()
+        waitFor(hasText("중일고등학교"))
+        compose.onNodeWithText("중일고등학교").performScrollTo().performClick()
         waitFor(hasText("이 학급으로 시작"))
         compose.onNodeWithText("이 학급으로 시작").performScrollTo().performClick()
         waitFor(hasText("오늘"))

@@ -5,7 +5,7 @@ import kotlinx.coroutines.runBlocking
 
 /** Opt-in network smoke check. Not part of offline unit tests. */
 fun main(args: Array<String>) = runBlocking {
-    val query = args.firstOrNull() ?: "경기북과학고"
+    val query = args.firstOrNull() ?: "중일고등학교"
     val client = ComciganClient()
     val schools = client.searchSchools(query)
     check(schools.isNotEmpty()) { "No matching school" }

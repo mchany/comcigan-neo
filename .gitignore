@@ -7,6 +7,10 @@ local.properties
 *.iml
 *.jks
 *.keystore
+.signing/
+*.apk
+*.aab
+/app/release/
 work/
 __pycache__/
 .DS_Store

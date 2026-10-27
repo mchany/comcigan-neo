@@ -12,8 +12,8 @@ android {
         manifestPlaceholders["appLabel"] = if (emulatorSmoke) "컴시간neo 테스트" else "@string/app_name"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0-alpha01"
+        versionCode = 2
+        versionName = "0.1.0-beta"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true; buildConfig = true }

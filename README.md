@@ -2,7 +2,9 @@
 
 Kotlin과 Jetpack Compose Material 3로 만드는 컴시간알리미 비공식 오픈소스 Android 클라이언트입니다.
 
-현재 버전: **0.1.0-alpha01 — 초안**. Android 8.0(API 26) 이상을 대상으로 합니다.
+현재 버전: **0.1.0-beta — 베타**. Android 8.0(API 26) 이상을 대상으로 합니다.
+
+[0.1.0 베타 다운로드](https://github.com/mchany/comcigan-neo/releases/tag/v0.1.0-beta)
 
 ## 구현한 기능
 
@@ -34,7 +36,7 @@ GitHub Actions도 같은 검증 후 디버그 APK를 artifact로 제공합니다
 명시적으로 실서버 연결을 확인하려면 아래 명령을 실행하세요. 일반 테스트는 서버에 연결하지 않습니다.
 
 ```sh
-./gradlew :core:comcigan:run --args="경기북과학고"
+./gradlew :core:comcigan:run --args="중일고등학교"
 ```
 
 Android Studio 에뮬레이터에서 실제 서버를 사용하는 UI 검증은 별도 앱 ID로 실행합니다.

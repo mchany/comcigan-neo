@@ -1,48 +1,25 @@
 {
-  "checked_at": "2026-10-27T16:46:38+0900",
+  "checked_at": "2026-10-27T18:55:29+0900",
   "source_commit": "cf738ee8945ef3c435cf1abf72e43ee90e32d1a7",
+  "method": "Original Python parser with bounded urllib transport adapter",
   "checks": [
     {
       "week": 0,
-      "school": "경기북과학고등학교",
+      "school": "중일고등학교",
       "start_date": "2026-10-26",
-      "updated_at": "2026-10-27 15:55:07",
+      "updated_at": "2026-10-27 15:10:41",
       "class": "1-1",
       "nonempty_periods": 34,
-      "subjects_sample": [
-        "국어",
-        "국어",
-        "지구1",
-        "심수",
-        "심수"
-      ],
-      "changed_periods": 2,
-      "seconds": 0.08
+      "changed_periods": 2
     },
     {
       "week": 1,
-      "school": "경기북과학고등학교",
+      "school": "중일고등학교",
       "start_date": "2026-11-02",
-      "updated_at": "2026-10-27 15:55:07",
+      "updated_at": "2026-10-27 15:10:41",
       "class": "1-1",
-      "nonempty_periods": 34,
-      "subjects_sample": [
-        "국어",
-        "국어",
-        "지구1",
-        "심수",
-        "심수"
-      ],
-      "changed_periods": 0,
-      "seconds": 0.08
-    },
-    {
-      "week": 0,
-      "school": "오현중학교",
-      "start_date": "2026-10-26",
-      "class": "1-1",
-      "nonempty_periods": 32,
-      "changed_periods": 14
+      "nonempty_periods": 29,
+      "changed_periods": 7
     }
   ],
   "codes": [
@@ -54,17 +31,12 @@
     "147",
     "481"
   ],
-  "legacy_regex_checks": {
-    "myoun_teacher_pattern_matches": false,
-    "star0202_teacher_pattern_matches": false,
-    "wrapped_teacher_pattern_matches": true
-  },
   "search": [
     [
       24966,
-      "경기",
-      "경기북과학고등학교",
-      12045
+      "대전",
+      "중일고등학교",
+      29318
     ]
   ]
 }

@@ -1,7 +1,7 @@
-# 초안 검증 기록
+# 검증 기록
 
 확인일: 2026-10-27 (Asia/Seoul)
-대상: 0.1.0-alpha01
+대상: 0.1.0-beta
 
 ## 자동 검증
 
@@ -23,16 +23,18 @@
 
 ## Kotlin 실서버 조회
 
-초안의 ComciganClient와 ComciganParser로 아래 명령을 실행했다.
+ComciganClient와 ComciganParser로 아래 명령을 실행했다. 문서 예시는 중일고등학교로 통일하고 베타 준비 중 재조회했다.
 
 ```sh
-./gradlew :core:comcigan:run --args="경기북과학고"
+./gradlew :core:comcigan:run --args="중일고등학교"
 ```
 
 | 학교·학급 | 주 시작일 | 수업이 있는 교시 | 변경 판정 |
 |---|---|---:|---:|
-| 경기북과학고등학교 1-1 | 2026-10-26 | 34 | 2 |
-| 경기북과학고등학교 1-1 | 2026-11-02 | 34 | 0 |
+| 중일고등학교 1-1 | 2026-10-26 | 34 | 2 |
+| 중일고등학교 1-1 | 2026-11-02 | 29 | 7 |
+
+변경 판정에는 현재 수업이 비어 있는 취소·변경 교시도 포함한다.
 
 학교 검색과 두 주의 조회·파싱이 정상 종료됐다. 원본 전체 응답이나 교사명은 로그에 출력하지 않았다.
 이전 Python 기준 구현 검증은 [별도 결과](research/python-live-check.json)에 보존했다.
@@ -58,6 +60,22 @@ Android Emulator 37.2.12 / Medium Phone API 37.0 / Android 17 / x86_64 / 1080×2
 
 에뮬레이터 검증 캡처와 상세 로그는 로컬 `work/`에 보관하고 공개 저장소에는 포함하지 않는다.
 참고: [AndroidX Test 공식 변경 기록](https://developer.android.com/jetpack/androidx/releases/test)
+
+## 0.1.0 베타 서명 APK
+
+Android Studio Rabbit 1 (2026.2.1)의 **Generate Signed App Bundle or APK → APK → release**로 배포 키를 지정해 생성했다.
+Studio의 Gradle JDK는 Eclipse Temurin 17.0.9로 설정했다. SDK 35와 Gradle 8.11.1을 사용했으며, CLI에서 `:app:lintRelease`도 통과했다.
+
+- 패키지: `io.github.mchany.comciganneo`
+- 버전: `0.1.0-beta` / versionCode `2`
+- APK 크기: 12,373,549바이트
+- 최소 SDK 26 / 대상 SDK 35 / 디버그 비활성화 확인
+- `apksigner verify --verbose --print-certs`: 검증 성공, APK Signature Scheme v2, RSA 3072비트
+- 서명 인증서 SHA-256: `4ec949d20e32a7b037d4c41071d162a6a014455d277a83aabaf6a274abf4e8ba`
+- APK SHA-256: `435b4d71e240d9c1d969883b0a08fe90e026074d6e0801fa169acc1d5c81b573`
+
+GitHub의 `v0.1.0-beta` 사전 릴리즈에 APK와 `SHA256SUMS.txt`를 첨부한다. 서명 키와 비밀번호는 저장소와 릴리즈에 포함하지 않는다.
+위 에뮬레이터 실행 검증은 디버그 빌드에서 수행했다. 서명한 release APK의 기기 설치·실행 검증은 아직 수행하지 않았다.
 
 ## 아직 확인하지 않은 항목
 
