@@ -14,11 +14,11 @@ import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import io.github.mchany.comciganneo.NeoState
 import io.github.mchany.comciganneo.NeoViewModel
@@ -29,33 +29,6 @@ import java.util.Locale
 
 private val MealDateLabel = DateTimeFormatter.ofPattern("M월 d일 EEEE", Locale.KOREAN)
 private val MealSyncLabel = DateTimeFormatter.ofPattern("M.d HH:mm", Locale.KOREAN)
-
-@Composable
-fun TodayMealCard(state: NeoState, open: () -> Unit, refresh: () -> Unit) {
-    OutlinedCard(onClick = open, modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("오늘 중식", style = MaterialTheme.typography.titleMedium)
-            val snapshot = state.meal.todaySnapshot
-            val meal = snapshot?.forDate(schoolToday())?.firstOrNull { it.type == MealType.LUNCH }
-            when {
-                state.mealSchool == null -> Text("학교를 연결하고 오늘 급식을 확인하세요.")
-                meal != null -> {
-                    meal.calories?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
-                    Text(meal.menu.joinToString("\n"))
-                }
-                snapshot != null -> Text("오늘 등록된 중식 정보가 없어요.")
-                state.meal.loading -> Text("급식을 가져오고 있어요.")
-                else -> Text(state.meal.todayError ?: "급식을 조회해 주세요.")
-            }
-            snapshot?.let { MealFetchedAt(it) }
-            if (state.meal.todayError != null && snapshot != null) {
-                Text("급식을 갱신하지 못해 저장된 자료를 보여드려요.", style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = refresh) { Text("급식 다시 시도") }
-            }
-            Text("급식 자세히 보기 →", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
-        }
-    }
-}
 
 @Composable
 fun MealScreen(state: NeoState, viewModel: NeoViewModel) {
@@ -70,13 +43,12 @@ fun MealScreen(state: NeoState, viewModel: NeoViewModel) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(state.mealSchool?.name ?: "급식 학교를 연결해 주세요", style = MaterialTheme.typography.titleMedium)
                     Text(state.mealSchool?.address ?: "시간표 학교와 같은 학교인지 이름과 주소를 확인해요.", style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = viewModel::openMealConnection) { Text(if (state.mealSchool == null) "급식 학교 연결" else "급식 학교 변경") }
+                    AlignedMealAction(onClick = viewModel::openMealConnection) { Text(if (state.mealSchool == null) "급식 학교 연결" else "급식 학교 변경") }
                 }
             }
         }
         if (!state.preferences.mealKeyConfigured) item {
-            Text("급식 조회를 시작하려면 나이스 인증키를 설정해 주세요.")
-            MealKeyButton(state, viewModel)
+            Text("급식 조회 설정이 없는 빌드예요. 최신 앱을 설치해 주세요.")
         }
         if (state.mealSchool != null) {
             item {
@@ -85,7 +57,7 @@ fun MealScreen(state: NeoState, viewModel: NeoViewModel) {
                     TextButton(onClick = { showDate = true }) { Text(date.format(MealDateLabel)) }
                     IconButton(onClick = { viewModel.mealDate(date.plusDays(1)) }) { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, "다음 날짜") }
                 }
-                TextButton(onClick = { viewModel.mealDate(schoolToday()) }) { Text("오늘로 이동") }
+                AlignedMealAction(onClick = { viewModel.mealDate(schoolToday()) }) { Text("오늘로 이동") }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(MealType.BREAKFAST, MealType.LUNCH, MealType.DINNER).forEach { option ->
                         FilterChip(selected = type == option, onClick = { type = option }, label = { Text(option.label) })
@@ -111,7 +83,7 @@ fun MealScreen(state: NeoState, viewModel: NeoViewModel) {
             state.meal.snapshot?.let { snapshot -> item { MealFetchedAt(snapshot) } }
         }
         item {
-            TextButton(onClick = { uri.openUri("https://open.neis.go.kr") }) { Text("자료 출처 · 나이스 교육정보 개방 포털") }
+            AlignedMealAction(onClick = { uri.openUri("https://open.neis.go.kr") }) { Text("자료 출처 · 나이스 교육정보 개방 포털") }
             Text("학교가 등록한 자료를 표시하며 실제 식단과 다를 수 있어요. 메뉴의 숫자는 알레르기 유발 식재료 번호예요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -144,11 +116,19 @@ private fun MealDetails(meal: MealEntry) {
 private fun MealExpandedText(title: String, text: String) {
     var expanded by rememberSaveable(title) { mutableStateOf(false) }
     Column {
-        TextButton(onClick = { expanded = !expanded }) {
+        AlignedMealAction(onClick = { expanded = !expanded }) {
             Text(title)
             Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, if (expanded) "접기" else "펼치기")
         }
         if (expanded) Text(text, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+private fun AlignedMealAction(onClick: () -> Unit, content: @Composable RowScope.() -> Unit) {
+    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(vertical = 8.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start,
+            verticalAlignment = Alignment.CenterVertically, content = content)
     }
 }
 
@@ -162,35 +142,13 @@ private fun MealFetchedAt(snapshot: MealSnapshot) {
 fun MealSettings(state: NeoState, viewModel: NeoViewModel) {
     ListItem(headlineContent = { Text("급식 학교") }, supportingContent = { Text(state.mealSchool?.name ?: "아직 연결하지 않았어요") },
         trailingContent = { TextButton(onClick = viewModel::openMealConnection) { Text("연결 관리") } })
-    MealKeyButton(state, viewModel)
     state.meal.error?.let { Text(it, Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall) }
     var confirmClear by remember { mutableStateOf(false) }
     TextButton(onClick = { confirmClear = true }, modifier = Modifier.padding(horizontal = 8.dp)) { Text("저장된 급식만 삭제") }
     if (confirmClear) AlertDialog(onDismissRequest = { confirmClear = false }, title = { Text("저장된 급식을 삭제할까요?") },
-        text = { Text("학교 연결과 인증키는 유지돼요. 다음 급식 조회에는 인터넷 연결이 필요해요.") },
+        text = { Text("학교 연결은 유지돼요. 다음 급식 조회에는 인터넷 연결이 필요해요.") },
         confirmButton = { TextButton(onClick = { viewModel.clearMealCache(); confirmClear = false }) { Text("삭제") } },
         dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("취소") } })
-}
-
-@Composable
-fun MealKeyButton(state: NeoState, viewModel: NeoViewModel) {
-    var dialog by remember { mutableStateOf(false) }
-    val uri = LocalUriHandler.current
-    TextButton(onClick = { dialog = true }) { Text(if (state.preferences.mealKeyConfigured) "나이스 인증키 변경" else "나이스 인증키 설정") }
-    if (dialog) {
-        // Deliberately not saveable: do not put a typed secret in saved-instance state.
-        var key by remember { mutableStateOf("") }
-        AlertDialog(onDismissRequest = { dialog = false }, title = { Text("나이스 인증키") }, text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("발급받은 인증키를 입력하면 급식을 조회할 수 있어요. 키는 이 기기의 앱 내부에 저장돼요.")
-                OutlinedTextField(key, { key = it }, label = { Text("새 인증키") }, singleLine = true,
-                    visualTransformation = PasswordVisualTransformation())
-                Text("비워서 저장하면 직접 입력한 키를 지우고 앱의 기본 키를 사용해요. 기본 키가 없으면 급식 조회가 꺼져요.", style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { uri.openUri("https://open.neis.go.kr/portal/myPage/actKeyPage.do") }) { Text("나이스에서 인증키 발급") }
-            }
-        }, confirmButton = { TextButton(onClick = { viewModel.saveMealKey(key); key = ""; dialog = false }) { Text("저장") } },
-            dismissButton = { TextButton(onClick = { dialog = false }) { Text("취소") } })
-    }
 }
 
 @Composable
@@ -203,7 +161,7 @@ fun MealConnectionDialog(state: NeoState, viewModel: NeoViewModel) {
                 Text("급식 학교 연결", style = MaterialTheme.typography.headlineSmall)
                 Text("시간표 학교와 같은 학교인지 주소까지 확인해 주세요.")
             }
-            if (!state.preferences.mealKeyConfigured) item { MealKeyButton(state, viewModel) }
+            if (!state.preferences.mealKeyConfigured) item { Text("급식 조회 설정이 없는 빌드예요. 최신 앱을 설치해 주세요.") }
             item {
                 OutlinedTextField(query, { query = it; confirm = null }, label = { Text("급식 학교 이름") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),

@@ -49,12 +49,12 @@ class EmulatorSmokeTest {
         compose.onNodeWithText("이 학급으로 시작").performScrollTo().performClick()
         waitFor(hasText("오늘"))
         compose.onNodeWithText("오늘").performClick()
-        waitFor(hasText("수업 목록"))
+        waitFor(hasTestTag("today-viewport"))
         screenshot("01-today")
 
         compose.onNodeWithText("주간", useUnmergedTree = false).performClick()
         waitFor(hasTestTag("week-table-${weekStart()}"))
-        compose.onNodeWithText("금\n${weekStart().plusDays(4).format(DateTimeFormatter.ofPattern("M.d"))}").assertIsDisplayed()
+        compose.onNodeWithText("금 ${weekStart().plusDays(4).format(DateTimeFormatter.ofPattern("M.d"))}").assertIsDisplayed()
         screenshot("02-week")
         compose.onNodeWithText("다음 주").performClick()
         waitFor(hasTestTag("week-table-${weekStart(offset = 1)}"))
@@ -74,10 +74,10 @@ class EmulatorSmokeTest {
         screenshot("05-dark-settings")
 
         compose.onNodeWithText("오늘", useUnmergedTree = false).performClick()
-        waitFor(hasText("수업 목록"))
+        waitFor(hasTestTag("today-viewport"))
         screenshot("06-dark-today")
         compose.activityRule.scenario.recreate()
-        waitFor(hasText("수업 목록"))
+        waitFor(hasTestTag("today-viewport"))
         screenshot("07-recreated")
     }
 }

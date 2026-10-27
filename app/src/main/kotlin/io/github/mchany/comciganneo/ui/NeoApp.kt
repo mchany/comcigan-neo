@@ -13,7 +13,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
-import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -22,7 +21,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -44,8 +42,6 @@ import java.util.Locale
 
 private val Korean = Locale.KOREAN
 private val DateLabel = DateTimeFormatter.ofPattern("M월 d일 EEEE", Korean)
-private val ShortDate = DateTimeFormatter.ofPattern("M.d", Korean)
-private enum class NeoTab { TODAY, WEEK, MEALS, SETTINGS }
 
 @Composable
 fun NeoApp(viewModel: NeoViewModel) {
@@ -70,46 +66,37 @@ fun NeoApp(viewModel: NeoViewModel) {
                 state.preferences.selection == null || state.setup -> SetupScreen(state, viewModel)
                 else -> {
                     val selection = state.preferences.selection!!
-                    Scaffold(
-                        topBar = {
-                            TopAppBar(title = {
-                                Column(Modifier.clickable(onClick = viewModel::openSetup)) {
-                                    Text(selection.school.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text("${selection.label}  ▾", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                                }
-                            }, actions = {
-                                if (tab != NeoTab.SETTINGS) IconButton(onClick = {
-                                    if (tab == NeoTab.MEALS) viewModel.refreshMeals() else {
-                                        viewModel.refresh()
-                                        if (tab == NeoTab.TODAY) viewModel.refreshMeals()
+                    BoxWithConstraints(Modifier.fillMaxSize()) {
+                        val rail = maxWidth > maxHeight && maxHeight < 500.dp
+                        val compact = rail || LocalDensity.current.fontScale > 1.2f
+                        val selectTab: (NeoTab) -> Unit = { next ->
+                            if (next == NeoTab.TODAY) viewModel.week(0)
+                            tab = next
+                        }
+                        Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {
+                            if (rail) NeoNavigation(tab, true, selectTab)
+                            Scaffold(
+                                modifier = Modifier.weight(1f),
+                                contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical),
+                                topBar = {
+                                    NeoAppBar(selection, compact, viewModel::openSetup,
+                                        refresh = if (tab == NeoTab.SETTINGS) null else {
+                                            { if (tab == NeoTab.MEALS) viewModel.refreshMeals() else viewModel.refresh() }
+                                        },
+                                        refreshing = if (tab == NeoTab.MEALS) state.meal.loading else state.loading,
+                                        meals = tab == NeoTab.MEALS)
+                                },
+                                bottomBar = { if (!rail) NeoNavigation(tab, false, selectTab) },
+                            ) { padding ->
+                                Column(Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize()) {
+                                    if (state.loading && tab != NeoTab.MEALS && tab != NeoTab.SETTINGS) LinearProgressIndicator(Modifier.fillMaxWidth())
+                                    when (tab) {
+                                        NeoTab.TODAY -> TodayScreen(state, now, viewModel::refresh) { detail = it }
+                                        NeoTab.WEEK -> WeekScreen(state, viewModel::week, viewModel::refresh) { detail = it }
+                                        NeoTab.MEALS -> MealScreen(state, viewModel)
+                                        NeoTab.SETTINGS -> SettingsScreen(state, viewModel)
                                     }
-                                }, enabled = if (tab == NeoTab.MEALS) state.mealSchool != null && !state.meal.loading else !state.loading) {
-                                    Icon(Icons.Rounded.Refresh, if (tab == NeoTab.MEALS) "급식 새로고침" else "시간표 새로고침")
                                 }
-                            })
-                        },
-                        bottomBar = {
-                            NavigationBar {
-                                listOf("오늘" to Icons.Rounded.Today, "주간" to Icons.Rounded.CalendarViewWeek,
-                                    "급식" to Icons.Rounded.Restaurant, "설정" to Icons.Rounded.Settings)
-                                    .forEachIndexed { index, (label, icon) ->
-                                        NavigationBarItem(selected = tab.ordinal == index, onClick = {
-                                            if (index == 0) viewModel.week(0)
-                                            tab = NeoTab.entries[index]
-                                        }, icon = { Icon(icon, null) }, label = { Text(label) })
-                                    }
-                            }
-                        },
-                    ) { padding ->
-                        Column(Modifier.padding(padding).fillMaxSize()) {
-                            if (state.loading && tab != NeoTab.MEALS && tab != NeoTab.SETTINGS) LinearProgressIndicator(Modifier.fillMaxWidth())
-                            when (tab) {
-                                NeoTab.TODAY -> TodayScreen(state, now, viewModel::refresh, onMeal = {
-                                    viewModel.mealDate(schoolToday()); tab = NeoTab.MEALS
-                                }, onMealRefresh = viewModel::refreshMeals) { detail = it }
-                                NeoTab.WEEK -> WeekScreen(state, viewModel::week, viewModel::refresh) { detail = it }
-                                NeoTab.MEALS -> MealScreen(state, viewModel)
-                                NeoTab.SETTINGS -> SettingsScreen(state, viewModel)
                             }
                         }
                     }
@@ -215,140 +202,6 @@ private fun NumberPicker(label: String, selected: Int, values: List<Int>, modifi
 }
 
 @Composable
-private fun TodayScreen(state: NeoState, now: ZonedDateTime, refresh: () -> Unit, onMeal: () -> Unit,
-    onMealRefresh: () -> Unit, onLesson: (LessonSlot) -> Unit) {
-    val today = now.toLocalDate()
-    val lessons = state.snapshot?.slots?.filter { it.date == today.toString() }.orEmpty()
-    val next = lessons.firstOrNull { slot ->
-        slot.current != null && slot.startTime?.let { runCatching { LocalTime.parse(it) >= now.toLocalTime() }.getOrDefault(false) } == true
-    }
-    LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item {
-            Text(today.format(DateLabel), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(4.dp))
-            Text("오늘의 시간표", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        item { TodayMealCard(state, onMeal, onMealRefresh) }
-        state.error?.let { item { MessageCard(it, state.snapshot != null, refresh) } }
-        if (state.snapshot == null) {
-            if (!state.loading && state.error == null) item { EmptyState("시간표를 준비해 주세요", "새로고침해서 수업을 가져올 수 있어요.") }
-        } else if (lessons.none { it.current != null }) {
-            item { EmptyState(if (today.dayOfWeek.value >= 6) "편안한 주말 보내세요" else "오늘은 등록된 수업이 없어요", "필요할 때 주간 시간표를 확인해 보세요.") }
-        } else {
-            item {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(if (next != null) "다음 수업 · ${next.period}교시" else "오늘의 수업", style = MaterialTheme.typography.labelLarge)
-                        Text(next?.current?.subject ?: "모든 시작 시각을 지났어요", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                        Text(if (next != null) "${next.startTime} 시작" else "진행 중인 수업은 아래 시간표에서 확인하세요.", style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
-            item {
-                val changes = lessons.count { it.changed }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("수업 목록", style = MaterialTheme.typography.titleMedium)
-                    if (changes > 0) Text("변경 ${changes}개", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
-                }
-            }
-            items(lessons, key = { it.period }) { LessonRow(it, state.preferences.showTeachers, onLesson) }
-        }
-        state.snapshot?.let { item { SyncLabel(it) } }
-    }
-}
-
-@Composable
-private fun LessonRow(slot: LessonSlot, showTeacher: Boolean, onClick: (LessonSlot) -> Unit) {
-    OutlinedCard(onClick = { onClick(slot) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(44.dp)) {
-                Text("${slot.period}", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
-                Text(slot.startTime ?: "교시", style = MaterialTheme.typography.labelSmall)
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(slot.current?.subject ?: "수업 없음", style = MaterialTheme.typography.titleMedium)
-                if (showTeacher) slot.current?.teacher?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            }
-            if (slot.changed) ChangeBadge()
-        }
-    }
-}
-
-@Composable
-private fun WeekScreen(state: NeoState, onWeek: (Int) -> Unit, refresh: () -> Unit, onLesson: (LessonSlot) -> Unit) {
-    var listView by rememberSaveable { mutableStateOf(false) }
-    LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item {
-            Text("한 주의 흐름", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = state.week == 0, onClick = { onWeek(0) }, label = { Text("이번 주") })
-                FilterChip(selected = state.week == 1, onClick = { onWeek(1) }, label = { Text("다음 주") })
-                Spacer(Modifier.weight(1f))
-                IconToggleButton(checked = listView, onCheckedChange = { listView = it }) {
-                    Icon(if (listView) Icons.Rounded.GridView else Icons.AutoMirrored.Rounded.ViewList, if (listView) "표로 보기" else "목록으로 보기")
-                }
-            }
-            Text("${weekStart(offset = state.week).format(ShortDate)} – ${weekStart(offset = state.week).plusDays(4).format(ShortDate)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        state.error?.let { item { MessageCard(it, state.snapshot != null, refresh) } }
-        val snapshot = state.snapshot
-        if (snapshot != null) {
-            if (listView) {
-                val days = snapshot.slots.groupBy { it.date }.toSortedMap()
-                days.forEach { (date, slots) ->
-                    item { Text(LocalDate.parse(date).format(DateLabel), style = MaterialTheme.typography.titleMedium) }
-                    items(slots, key = { "${it.date}-${it.period}" }) { LessonRow(it, state.preferences.showTeachers, onLesson) }
-                }
-            } else {
-                item { WeekGrid(snapshot, state.preferences.showTeachers, onLesson) }
-            }
-            item { SyncLabel(snapshot) }
-        }
-    }
-}
-
-@Composable
-private fun WeekGrid(snapshot: TimetableSnapshot, showTeachers: Boolean, onLesson: (LessonSlot) -> Unit) {
-    val start = LocalDate.parse(snapshot.weekStart)
-    val days = (0..4).map { start.plusDays(it.toLong()) }
-    val index = snapshot.slots.associateBy { it.date to it.period }
-    val periods = snapshot.slots.maxOfOrNull { it.period } ?: 0
-    val largeText = LocalDensity.current.fontScale > 1.2f
-    // Fit five days on typical phones; retain readable scrolling cells for large text.
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val periodWidth = if (largeText) 36.dp else 28.dp
-        val cellWidth = ((maxWidth - periodWidth - 30.dp) / 5).coerceAtLeast(if (largeText) 78.dp else 52.dp)
-        Column(Modifier.testTag("week-table-${snapshot.weekStart}").horizontalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Spacer(Modifier.width(periodWidth))
-                days.forEach { date ->
-                    Text("${date.format(DateTimeFormatter.ofPattern("E", Korean))}\n${date.format(ShortDate)}", Modifier.width(cellWidth).padding(8.dp),
-                        style = MaterialTheme.typography.labelLarge, color = if (date == schoolToday()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            for (period in 1..periods) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("$period", Modifier.width(periodWidth), style = MaterialTheme.typography.labelLarge)
-                    days.forEach { date ->
-                        val slot = index[date.toString() to period]
-                        Surface(onClick = { slot?.let(onLesson) }, enabled = slot != null, modifier = Modifier.width(cellWidth).heightIn(min = 100.dp),
-                            color = if (slot?.changed == true) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-                            shape = RoundedCornerShape(14.dp)) {
-                            Column(Modifier.padding(horizontal = 8.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                Text(slot?.current?.subject ?: "—", style = MaterialTheme.typography.labelLarge, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                                if (showTeachers) slot?.current?.teacher?.let { Text(it, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                                if (slot?.changed == true) Text("변경", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun SettingsScreen(state: NeoState, viewModel: NeoViewModel) {
     val uriHandler = LocalUriHandler.current
     var clearDialog by remember { mutableStateOf(false) }
@@ -417,13 +270,6 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
 }
 
 @Composable
-private fun ChangeBadge() {
-    Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.tertiaryContainer) {
-        Text("변경", Modifier.padding(horizontal = 8.dp, vertical = 5.dp), style = MaterialTheme.typography.labelSmall)
-    }
-}
-
-@Composable
 private fun MessageCard(message: String, cached: Boolean = false, retry: (() -> Unit)? = null) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -431,23 +277,5 @@ private fun MessageCard(message: String, cached: Boolean = false, retry: (() -> 
             Text(message, style = MaterialTheme.typography.bodyMedium)
             if (retry != null) TextButton(onClick = retry) { Text("다시 시도") }
         }
-    }
-}
-
-@Composable
-private fun EmptyState(title: String, description: String) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 48.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Icon(Icons.Rounded.EventAvailable, null, Modifier.size(44.dp), tint = MaterialTheme.colorScheme.primary)
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun SyncLabel(snapshot: TimetableSnapshot) {
-    val time = Instant.ofEpochMilli(snapshot.fetchedAt).atZone(SchoolZone).format(DateTimeFormatter.ofPattern("M.d HH:mm"))
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(vertical = 8.dp)) {
-        Text("마지막 조회 $time", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        snapshot.serverUpdatedAt?.let { Text("학교 자료 갱신 $it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
