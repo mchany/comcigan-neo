@@ -79,7 +79,6 @@ class AppRepository(context: Context, private val defaultNeisKey: String = "") {
     private val dynamicKey = booleanPreferencesKey("dynamic_color")
     private val teachersKey = booleanPreferencesKey("show_teachers")
     private val mealSchoolsKey = stringPreferencesKey("meal_schools")
-    private val neisKey = stringPreferencesKey("neis_api_key")
     private val mealLock = Mutex()
     private val neisTransport = OkHttpNeisTransport()
 
@@ -94,7 +93,7 @@ class AppRepository(context: Context, private val defaultNeisKey: String = "") {
             mealSchools = data[mealSchoolsKey]?.let {
                 runCatching { json.decodeFromString<Map<String, NeisSchoolRef>>(it) }.getOrNull()
             } ?: emptyMap(),
-            mealKeyConfigured = !data[neisKey].orEmpty().ifBlank { defaultNeisKey }.isBlank(),
+            mealKeyConfigured = defaultNeisKey.isNotBlank(),
         )
     }
     suspend fun select(selection: ClassSelection) { context.settings.edit { it[selectionKey] = json.encodeToString(selection) } }
@@ -113,8 +112,7 @@ class AppRepository(context: Context, private val defaultNeisKey: String = "") {
         database.snapshots().prune(weekStart(offset = -4).toString())
         return snapshot
     }
-    private suspend fun mealClient(): NeisClient = NeisClient(
-        context.settings.data.first()[neisKey].orEmpty().ifBlank { defaultNeisKey }, neisTransport)
+    private fun mealClient(): NeisClient = NeisClient(defaultNeisKey, neisTransport)
     suspend fun searchMealSchools(query: String) = mealClient().searchSchools(query)
     suspend fun setMealSchool(comciganCode: Int, school: NeisSchoolRef?) {
         context.settings.edit { data ->
@@ -125,7 +123,6 @@ class AppRepository(context: Context, private val defaultNeisKey: String = "") {
             data[mealSchoolsKey] = json.encodeToString(schools)
         }
     }
-    suspend fun setMealKey(key: String) { context.settings.edit { it[neisKey] = key.trim() } }
     suspend fun cachedMeals(school: NeisSchoolRef, date: LocalDate): MealSnapshot? =
         database.meals().find(school.officeCode, school.schoolCode, weekStart(date).toString())?.let {
             runCatching { json.decodeFromString<MealSnapshot>(it.json) }.getOrNull()
@@ -148,11 +145,11 @@ class AppRepository(context: Context, private val defaultNeisKey: String = "") {
 }
 
 fun mealUserMessage(error: Throwable): String = when (error) {
-    is NeisKeyRequired -> "급식 조회를 사용하려면 나이스 인증키를 설정해 주세요."
-    is NeisIncomplete -> "급식 자료를 모두 받지 못했어요. 인증키와 연결을 확인하고 다시 시도해 주세요."
+    is NeisKeyRequired -> "급식 조회 설정이 없는 빌드예요. 최신 앱을 설치해 주세요."
+    is NeisIncomplete -> "급식 자료를 모두 받지 못했어요. 잠시 후 다시 시도해 주세요."
     is NeisStructureChanged -> "급식 자료 형식이 바뀌었거나 읽을 수 없어요. 앱 업데이트를 확인해 주세요."
     is NeisApiException -> when (error.code) {
-        "ERROR-290", "ERROR-300" -> "나이스 인증키가 올바르지 않거나 사용할 수 없어요. 인증키를 확인해 주세요."
+        "ERROR-290", "ERROR-300" -> "급식 서비스 인증에 실패했어요. 앱 업데이트를 확인해 주세요."
         "ERROR-337", "ERROR-336" -> "나이스 조회 한도에 도달했어요. 잠시 후 다시 시도해 주세요."
         else -> "나이스에서 조회를 완료하지 못했어요. (${error.code})"
     }

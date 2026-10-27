@@ -52,12 +52,12 @@ class MealUiTest {
             }
         } finally { database.close() }
         val repository = AppRepository(context)
-        repository.setMealKey("offline-fixture-key")
         repository.setMealSchool(selection.school.code, school)
         repository.select(selection)
         repository.theme(ThemeMode.LIGHT)
-        waitFor(hasText("오늘 중식"))
-        compose.onNodeWithText("검증밥 100g (5.6)").assertIsDisplayed()
+        waitFor(hasText("검증수업 선생님"))
+        compose.onNodeWithText("오늘 중식").assertDoesNotExist()
+        compose.onNodeWithText("나이스 인증키 설정").assertDoesNotExist()
         screenshot("meal-01-today")
         compose.onNodeWithText("급식", useUnmergedTree = false).performClick()
         waitFor(hasText("오늘은 무슨 메뉴?"))
@@ -78,5 +78,9 @@ class MealUiTest {
         compose.onNode(hasText("석식") and hasClickAction()).performScrollTo().performClick()
         compose.onNodeWithText("검증석식 (1.2)").performScrollTo().assertIsDisplayed()
         screenshot("meal-04-recreated-dark")
+        compose.onNodeWithText("설정", useUnmergedTree = false).performClick()
+        compose.onNodeWithText("나이스 인증키 설정").assertDoesNotExist()
+        compose.onNodeWithText("나이스 인증키 변경").assertDoesNotExist()
+        compose.onAllNodes(hasSetTextAction()).assertCountEquals(0)
     }
 }

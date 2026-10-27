@@ -2,6 +2,8 @@ package io.github.mchany.comciganneo.ui
 
 import android.os.Build
 import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -38,7 +40,7 @@ fun NeoTheme(preferences: AppPreferences = AppPreferences(), content: @Composabl
     val context = LocalContext.current
     val view = LocalView.current
     SideEffect {
-        (context as? Activity)?.window?.let { window ->
+        context.activity()?.window?.let { window ->
             WindowCompat.getInsetsController(window, view).apply {
                 isAppearanceLightStatusBars = !dark
                 isAppearanceLightNavigationBars = !dark
@@ -49,4 +51,10 @@ fun NeoTheme(preferences: AppPreferences = AppPreferences(), content: @Composabl
         if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
     } else if (dark) Dark else Light
     MaterialTheme(colorScheme = colors, content = content)
+}
+
+private tailrec fun Context.activity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.activity()
+    else -> null
 }

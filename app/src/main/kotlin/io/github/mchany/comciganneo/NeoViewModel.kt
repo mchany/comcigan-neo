@@ -228,17 +228,6 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
               catch (_: Exception) { mutable.update { it.copy(meal = it.meal.copy(saving = false, connectionError = "급식 학교를 저장하지 못했어요. 다시 시도해 주세요.")) } }
         }
     }
-    fun saveMealKey(key: String) {
-        viewModelScope.launch {
-            mealJob?.cancelAndJoin(); mealSearchJob?.cancelAndJoin()
-            try {
-                repository.setMealKey(key)
-                mutable.update { it.copy(meal = it.meal.copy(schools = emptyList(), searched = false, connectionError = null)) }
-                loadMeals()
-            } catch (e: CancellationException) { throw e }
-              catch (_: Exception) { mutable.update { it.copy(meal = it.meal.copy(error = "인증키를 저장하지 못했어요.")) } }
-        }
-    }
     fun clearMealCache() {
         viewModelScope.launch {
             mealJob?.cancelAndJoin()
