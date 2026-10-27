@@ -8,7 +8,7 @@ Copyright (c) 2023 hegelty. Licensed under MIT.
 The full notice is preserved in `LICENSES/pycomcigan-MIT.txt` and in the app's
 Settings → Open source notices screen.
 
-The application is licensed under Apache-2.0, with the above MIT-derived portions
+The application is licensed under MIT, with the above MIT-derived portions
 retaining their notice. Kotlin, kotlinx libraries, AndroidX/Compose, Material
 components and OkHttp are used under Apache-2.0; Okio is used under Apache-2.0.
 Gradle wrapper scripts/JAR are distributed by Gradle under Apache-2.0.
