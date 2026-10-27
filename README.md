@@ -1,7 +1,6 @@
 # 컴시간neo
 
 Kotlin과 Jetpack Compose Material 3로 제작한 컴시간알리미 비공식 오픈소스 Android 클라이언트입니다.
-시간표 파싱에는 [hegelty/pycomcigan](https://github.com/hegelty/pycomcigan)의 MIT 라이선스 Python 파서를 Kotlin으로 이식해 사용했습니다.
 
 현재 배포 버전: **0.2.1-beta — 급식 조회 기능 및 시간표 화면 개선**. Android 8.0(API 26) 이상에서 설치할 수 있습니다.
 
