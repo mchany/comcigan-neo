@@ -1,5 +1,15 @@
 # 검증 기록
 
+## 1.0.0 APK 코드·리소스 축소 — 2026-10-28 KST
+
+- 기준: 초기 설정·알림·위젯 정리가 병합된 최신 `main`의 `bc51515`. `apk-size-1.0.0` 별도 브랜치에서 작업한다. APK 직접 배포를 유지하며 App Bundle은 생성하지 않는다.
+- 릴리즈에 R8 최적화·난독화와 리소스 축소를 적용하고, 사용하지 않는 미리보기 의존성은 디버그로 옮겼다. 한국어·영어·기본 리소스를 유지하고 모든 기존 CPU ABI·위젯 리소스·오픈소스 고지를 보존한다. 버전은 `1.0.0` / versionCode `6`이다.
+- 두 Worker의 영속 클래스 이름과 공개 생성자를 한정해 보존한다. AndroidX의 소비자 규칙, manifest 진입점, WorkManager 초기화·서비스와 알람·위젯 수신기는 유지했다. 실제 APK DEX에서도 두 생성자의 존재를 확인했다.
+- JVM 테스트 33개와 첫 일반 릴리즈 빌드·Lint 통과. 최종 서명 산출물은 커밋된 소스를 별도 폴더로 추출해 다시 테스트·빌드·검증한다.
+- Android 17의 격리 `.smoke` 앱에 합성 캐시·예약을 저장한 뒤 테스트 코드·keep 규칙을 붙이지 않은 non-debuggable R8 릴리즈 APK로 실제 업데이트했다. 앱의 백그라운드 프로세스를 종료하고, 새 프로세스에서 기존 UUID의 `DailyNotificationWorker`·`WidgetRefreshWorker` 성공과 실제 예약 시각의 두 알림을 확인했다. 시간표·급식 화면의 이전 캐시도 복원됐다. 일반 앱 데이터는 지우지 않았다.
+- 재현 절차와 비교 기준은 [APK 용량 축소](apk-size.md), 자동 검사는 `tools/verify-optimized-upgrade.ps1`에 있다. 로컬 증거는 `work/apk-size-upgrade/result.json`·`background-workers.log`·화면 XML에 기록했다. 기존 서명 APK 12,775,713바이트 중 압축 DEX는 약 94%였으며, 첫 R8 일반 빌드의 서명 전 APK는 1,773,276바이트다.
+- 축소 APK의 격리 데이터만 지운 첫 설치 상태에서도 `초기 설정 · 1/3` 화면을 확인했다.
+
 ## 1.0.0 준비 — 코드·리소스 정리 — 2026-10-28 KST
 
 - 기준: `initial-setup-notifications-widgets`의 `79a982c`. 정식 배포 준비 작업이며 버전·서명·현재 배포 파일은 변경하지 않는다.

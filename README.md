@@ -6,6 +6,8 @@ Kotlin과 Jetpack Compose Material 3로 제작한 컴시간알리미 비공식 �
 
 개발 현황: **1.0.0 준비 중**. 초기 설정, 시간표·급식 알림, Material 3 홈 위젯을 구현했으며 아래 개발 빌드 안내에서 확인할 수 있습니다.
 
+1.0.0 릴리즈 APK에는 R8 코드·리소스 축소를 적용합니다. [용량 축소 및 백그라운드 업데이트 검증](docs/apk-size.md)을 참고하세요.
+
 [![APK 다운로드 · 0.2.1-beta](https://img.shields.io/badge/APK_다운로드-0.2.1--beta-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/download/v0.2.1-beta/comcigan-neo-0.2.1-beta.apk)
 [![릴리즈 노트 · 0.2.1-beta](https://img.shields.io/badge/릴리즈_노트-0.2.1--beta-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/tag/v0.2.1-beta)
 
