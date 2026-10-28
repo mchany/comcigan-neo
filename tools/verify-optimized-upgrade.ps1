@@ -5,7 +5,8 @@ param(
     [string]$BaselineApk = 'app/build/outputs/apk/debug/app-debug.apk',
     [string]$TestApk = 'app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk',
     [string]$OptimizedApk = 'app/build/outputs/apk/release/app-release.apk',
-    [string]$LogDirectory = 'work/optimized-upgrade'
+    [string]$LogDirectory = 'work/optimized-upgrade',
+    [switch]$LegacyReceipt
 )
 $ErrorActionPreference = 'Stop'
 $target = 'io.github.mchany.comciganneo.smoke'
@@ -32,7 +33,7 @@ foreach ($item in @(@($BaselineApk,$target), @($TestApk,"$target.test"), @($Opti
         throw 'The optimized APK must be a non-debuggable release build.'
     }
 }
-Adb-Checked @('install','-r',$BaselineApk)
+Adb-Checked @('install','-r','-d',$BaselineApk)
 Adb-Checked @('install','-r',$TestApk)
 # Only the isolated verification package is cleared; the user's normal app is preserved.
 Adb-Checked @('shell','pm','clear',$target) | Out-Null
@@ -40,9 +41,11 @@ Adb-Checked @('shell','appwidget','grantbind','--package',$target,'--user','0') 
 Adb-Checked @('shell','pm','grant',$target,'android.permission.POST_NOTIFICATIONS') | Out-Null
 Adb-Checked @('shell','appops','set',$target,'SCHEDULE_EXACT_ALARM','allow') | Out-Null
 $prepareLog = Join-Path $LogDirectory 'prepare.log'
-& $Adb -s $Serial shell am instrument -w -e class 'io.github.mchany.comciganneo.BackgroundRestoreTest#prepareUpgrade' "$target.test/androidx.test.runner.AndroidJUnitRunner" *> $prepareLog
+$legacyFlag = $LegacyReceipt.IsPresent.ToString().ToLowerInvariant()
+& $Adb -s $Serial shell am instrument -w -e legacyReceipt $legacyFlag -e class 'io.github.mchany.comciganneo.BackgroundRestoreTest#prepareUpgrade' "$target.test/androidx.test.runner.AndroidJUnitRunner" *> $prepareLog
 $prepared = Get-Content -LiteralPath $prepareLog -Raw
 if ($LASTEXITCODE -ne 0 -or $prepared -notmatch 'OK \(1 test\)') { throw "Preparation failed; see $prepareLog" }
+if ($LegacyReceipt -and $prepared -notmatch 'legacyDateReceiptVerified=true') { throw 'The version-6 receipt reproduction did not run.' }
 $ids = [regex]::Match($prepared, 'restoreWorkIds=([a-f0-9,-]+)').Groups[1].Value.Split(',')
 $oldPid = [regex]::Match($prepared, 'originalPid=(\d+)').Groups[1].Value
 if ($ids.Count -ne 2 -or -not $oldPid) { throw 'Missing restoration evidence from preparation.' }
@@ -83,6 +86,6 @@ if ((Read-Screen 'optimized-meals') -notmatch '점심검증밥') { throw 'Optimi
 Adb-Checked @('shell','pm','clear',$target) | Out-Null
 Adb-Checked @('shell','am','start','-W','-n',$component) | Out-Null
 if ((Read-Screen 'optimized-fresh-setup') -notmatch '초기 설정 · 1/3') { throw 'Optimized first-install setup was not displayed.' }
-[pscustomobject]@{ oldProcess=$oldPid; upgradedProcess=$newPid; backgroundProcessTerminated=$terminated; restoredWorkIds=$ids; workersSucceeded=$workersFinished; bothNotificationsPosted=$notificationsPosted; timetableAndMealCachesRestored=$true; freshSetupDisplayed=$true } |
+[pscustomobject]@{ oldProcess=$oldPid; upgradedProcess=$newPid; backgroundProcessTerminated=$terminated; restoredWorkIds=$ids; workersSucceeded=$workersFinished; bothNotificationsPosted=$notificationsPosted; timetableAndMealCachesRestored=$true; freshSetupDisplayed=$true; legacyDateReceiptMigrationVerified=$LegacyReceipt.IsPresent } |
     ConvertTo-Json | Set-Content -LiteralPath (Join-Path $LogDirectory 'result.json') -Encoding utf8
 Write-Output 'PASS: real R8 APK upgrade, cold background worker restoration, scheduled notifications, and cached UI.'

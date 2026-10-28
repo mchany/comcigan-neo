@@ -32,6 +32,14 @@ fun nextDailyNotification(minutes: Int, now: ZonedDateTime): ZonedDateTime {
     return if (today.isAfter(koreaNow)) today else today.plusDays(1)
 }
 
+fun notificationDeliverySlot(date: LocalDate, minutes: Int): String {
+    require(minutes in 0..1439)
+    return "$date|$minutes"
+}
+
+fun recordNotificationDelivery(existing: Set<String>, date: LocalDate, minutes: Int): Set<String> =
+    existing.filterTo(mutableSetOf()) { it.startsWith("$date|") } + notificationDeliverySlot(date, minutes)
+
 data class DailyNotificationText(val title: String, val summary: String, val body: String)
 
 private fun cachedNotice(fetchedAt: Long): String =

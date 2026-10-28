@@ -24,7 +24,7 @@ android {
         manifestPlaceholders["appLabel"] = if (emulatorSmoke) "컴시간neo 테스트" else "@string/app_name"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
+        versionCode = 7
         versionName = "1.0.0"
         resourceConfigurations += listOf("ko", "en")
         buildConfigField("String", "NEIS_API_KEY", neisKeyLiteral)

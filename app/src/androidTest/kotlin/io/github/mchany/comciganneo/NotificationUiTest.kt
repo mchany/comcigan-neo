@@ -116,10 +116,25 @@ class NotificationUiTest {
         assertEquals("오늘의 급식이에요", mealNotification.notification.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
         assertEquals("중식\n검증점심밥\n검증점심국\n\n석식\n검증저녁밥\n검증저녁국", mealNotification.notification.extras.getCharSequence(Notification.EXTRA_BIG_TEXT).toString())
         assertNotEquals(scheduleNotification.notification.channelId, mealNotification.notification.channelId)
-        eventually { runBlocking { repository.notificationDelivered(NotificationKind.TIMETABLE, today) && repository.notificationDelivered(NotificationKind.MEALS, today) } }
+        eventually { runBlocking { repository.notificationDelivered(NotificationKind.TIMETABLE, today, minutes) && repository.notificationDelivered(NotificationKind.MEALS, today, minutes) } }
         alarm.send()
         SystemClock.sleep(2_000)
         assertEquals(scheduleNotification.postTime, manager.activeNotifications.first { it.id == scheduleNotification.id }.postTime)
+
+        // Receiving an earlier notification today must not suppress a newly configured time.
+        val laterMinutes = (minutes + 1) % 1440
+        repository.updateNotification(NotificationKind.TIMETABLE, minutes = laterMinutes)
+        assertFalse(repository.notificationDelivered(NotificationKind.TIMETABLE, today, laterMinutes))
+        val laterAlarm = PendingIntent.getBroadcast(context, 7231, alarmIntent.putExtra("minutes", laterMinutes),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        laterAlarm.send()
+        eventually { manager.activeNotifications.any { it.id == scheduleNotification.id && it.postTime != scheduleNotification.postTime } }
+        eventually { runBlocking { repository.notificationDelivered(NotificationKind.TIMETABLE, today, laterMinutes) } }
+        assertTrue(repository.notificationDelivered(NotificationKind.TIMETABLE, today, minutes))
+        val laterPost = manager.activeNotifications.first { it.id == scheduleNotification.id }.postTime
+        laterAlarm.send()
+        SystemClock.sleep(2_000)
+        assertEquals(laterPost, manager.activeNotifications.first { it.id == scheduleNotification.id }.postTime)
 
         scheduleNotification.notification.contentIntent.send()
         waitFor(hasTestTag("today-viewport"))
