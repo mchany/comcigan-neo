@@ -17,8 +17,7 @@ data class WidgetColors(val surface: Int, val cardSurface: Int, val ink: Int, va
     val accent: Int, val onAccent: Int, val container: Int, val onContainer: Int, val outline: Int,
     val bitmapScale: Float) {
     companion object {
-        @Suppress("UNUSED_PARAMETER")
-        fun resolve(context: Context, preferences: AppPreferences, kind: WidgetKind): WidgetColors {
+        fun resolve(context: Context, preferences: AppPreferences): WidgetColors {
             val scheme = neoColorScheme(context, preferences)
             val scale = minOf(1.5f, context.resources.displayMetrics.density * 0.6f)
             if (preferences.widgetPalette == WidgetPalette.APP) {

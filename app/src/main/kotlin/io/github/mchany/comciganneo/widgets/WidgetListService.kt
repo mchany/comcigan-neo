@@ -21,10 +21,10 @@ class WidgetListService : RemoteViewsService() {
         override fun onDataSetChanged() = runBlocking(Dispatchers.IO) {
             val data = WidgetData.load(applicationContext)
             rows = widgetRows(data, kind, section)
-            colors = WidgetColors.resolve(applicationContext, data.preferences, kind)
+            colors = WidgetColors.resolve(applicationContext, data.preferences)
         }
         override fun getCount() = rows.size
-        override fun getViewAt(position: Int): RemoteViews? = rows.getOrNull(position)?.let { row -> colors?.let { WidgetRenderer.rowView(applicationContext, row, it, kind, section) } }
+        override fun getViewAt(position: Int): RemoteViews? = rows.getOrNull(position)?.let { row -> colors?.let { WidgetCollection.rowView(applicationContext, row, it, kind, section) } }
         override fun getLoadingView() = RemoteViews(packageName, R.layout.widget_loading_m3)
         override fun getViewTypeCount() = 1
         override fun getItemId(position: Int) = position.toLong()

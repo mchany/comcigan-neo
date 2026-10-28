@@ -5,10 +5,8 @@ import io.github.mchany.comciganneo.model.*
 data class MealState(
     val date: String = schoolToday().toString(),
     val snapshot: MealSnapshot? = null,
-    val todaySnapshot: MealSnapshot? = null,
     val loading: Boolean = false,
     val error: String? = null,
-    val todayError: String? = null,
     val connecting: Boolean = false,
     val searching: Boolean = false,
     val searched: Boolean = false,

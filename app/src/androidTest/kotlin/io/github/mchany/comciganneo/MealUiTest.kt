@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.room.Room
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.mchany.comciganneo.data.*
@@ -46,8 +47,9 @@ class MealUiTest {
             val entries = listOf(MealType.LUNCH, MealType.DINNER).map { type -> MealEntry(today.toString(), type.code, type.label,
                 "검증밥 100g", listOf(if (type == MealType.LUNCH) "검증밥 100g (5.6)" else "검증석식 (1.2)"), "700.0 Kcal",
                 nutrition = "단백질(g): 20", origin = "쌀: 국내산") }
-            for (week in setOf(weekStart(today), weekStart(today.plusDays(1)))) {
-                val snapshot = MealSnapshot(school, week.toString(), now, entries.filter { weekStart(java.time.LocalDate.parse(it.date)) == week })
+            val allEntries = entries + entries.last().copy(date = today.plusWeeks(1).toString(), menu = listOf("다음주검증석식"))
+            for (week in setOf(weekStart(today), weekStart(today.plusDays(1)), weekStart(today.plusWeeks(1)))) {
+                val snapshot = MealSnapshot(school, week.toString(), now, allEntries.filter { weekStart(java.time.LocalDate.parse(it.date)) == week })
                 database.meals().save(MealSnapshotEntity(school.officeCode, school.schoolCode, snapshot.weekStart, Json.encodeToString(snapshot)))
             }
         } finally { database.close() }
@@ -74,6 +76,15 @@ class MealUiTest {
         compose.onNodeWithContentDescription("다음 날짜").performScrollTo().performClick()
         waitFor(hasText("등록된 석식 정보가 없어요.", substring = true))
         screenshot("meal-03-empty")
+        compose.onNodeWithText("오늘로 이동").performScrollTo().performClick()
+        compose.onNodeWithText("검증석식 (1.2)").performScrollTo().assertIsDisplayed()
+        // Changing weeks must display the selected week's cache and return to today.
+        compose.runOnUiThread {
+            ViewModelProvider(compose.activity)[NeoViewModel::class.java].mealDate(today.plusWeeks(1))
+        }
+        waitFor(hasText("다음주검증석식"))
+        compose.onNodeWithText("다음주검증석식").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("검증석식 (1.2)").assertDoesNotExist()
         compose.onNodeWithText("오늘로 이동").performScrollTo().performClick()
         compose.onNodeWithText("검증석식 (1.2)").performScrollTo().assertIsDisplayed()
         repository.theme(ThemeMode.DARK)

@@ -68,8 +68,8 @@ class NotificationUiTest {
         repository.select(selection)
         repository.setMealSchool(selection.school.code, school)
         repository.finishInitialSetup()
-        repository.notification(NotificationKind.TIMETABLE, DailyNotificationSettings(true, 450))
-        repository.notification(NotificationKind.MEALS, DailyNotificationSettings(true, 690))
+        repository.updateNotification(NotificationKind.TIMETABLE, enabled = true, minutes = 450)
+        repository.updateNotification(NotificationKind.MEALS, enabled = true, minutes = 690)
         waitFor(hasText("오늘"))
         compose.onNodeWithText("설정", useUnmergedTree = false).performClick()
         compose.onNodeWithContentDescription("시간표 알림").performScrollTo().assertIsOn()
@@ -93,8 +93,8 @@ class NotificationUiTest {
         compose.onNodeWithContentDescription("급식 알림").performScrollTo().assertIsOn()
 
         val minutes = ZonedDateTime.now(SchoolZone).let { it.hour * 60 + it.minute }
-        repository.notification(NotificationKind.TIMETABLE, DailyNotificationSettings(true, minutes))
-        repository.notification(NotificationKind.MEALS, DailyNotificationSettings(true, minutes))
+        repository.updateNotification(NotificationKind.TIMETABLE, enabled = true, minutes = minutes)
+        repository.updateNotification(NotificationKind.MEALS, enabled = true, minutes = minutes)
         eventually { runBlocking { repository.preferences.first().mealNotification.minutes == minutes } }
         compose.waitForIdle()
         val scheduler = DailyNotificationScheduler(context)
@@ -137,7 +137,7 @@ class NotificationUiTest {
         compose.onNodeWithText("설정", useUnmergedTree = false).performClick()
         compose.onNodeWithContentDescription("시간표 알림").performScrollTo().assertIsOff()
         compose.onNodeWithContentDescription("급식 알림").performScrollTo().assertIsOn()
-        repository.notification(NotificationKind.MEALS, DailyNotificationSettings(false, minutes))
+        repository.updateNotification(NotificationKind.MEALS, enabled = false, minutes = minutes)
         manager.cancelAll()
     }
 }

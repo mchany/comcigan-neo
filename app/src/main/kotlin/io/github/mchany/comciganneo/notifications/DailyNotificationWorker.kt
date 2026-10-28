@@ -19,7 +19,7 @@ class DailyNotificationWorker(context: Context, parameters: WorkerParameters) : 
         if (!isNotificationReady(preferences, kind) || preferences.notification(kind).minutes != minutes ||
             !DailyNotificationPublisher.allowed(applicationContext, kind) || repository.notificationDelivered(kind, date)) return Result.success()
         val selection = preferences.selection!!
-        val school = preferences.mealSchools[selection.school.code.toString()]
+        val school = preferences.mealSchool
         try {
             var fallback = false
             val timetable = if (kind == NotificationKind.TIMETABLE) {
@@ -34,7 +34,7 @@ class DailyNotificationWorker(context: Context, parameters: WorkerParameters) : 
             currentCoroutineContext().ensureActive()
             val current = repository.preferences.first()
             if (schoolToday() != date || !isNotificationReady(current, kind) || current.notification(kind).minutes != minutes ||
-                current.selection != selection || (kind == NotificationKind.MEALS && current.mealSchools[selection.school.code.toString()] != school)) return Result.success()
+                current.selection != selection || (kind == NotificationKind.MEALS && current.mealSchool != school)) return Result.success()
             val text = when {
                 timetable != null -> timetableNotificationText(timetable, date, current.showTeachers, fallback)
                 meals != null -> mealNotificationText(meals, date, fallback)

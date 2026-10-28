@@ -150,20 +150,34 @@ class WidgetHostTest {
             eventually { var ready = false; main { ready = views[0].findViewById<ListView>(R.id.widget_list)?.adapter?.count == 7 }; ready }
             repository.widgetPalette(WidgetPalette.ROSE); repository.theme(ThemeMode.DARK)
             WidgetRenderer.updateAll(context)
-            val expected = WidgetColors.resolve(context, repository.preferences.first(), WidgetKind.TIMETABLE)
+            val expected = WidgetColors.resolve(context, repository.preferences.first())
             eventually { var matches = false; main { matches = views[2].findViewById<TextView>(R.id.widget_date).currentTextColor == expected.accent }; matches }
             for (palette in WidgetPalette.entries) for (theme in listOf(ThemeMode.LIGHT, ThemeMode.DARK)) {
-                val colors = WidgetColors.resolve(context, data.preferences.copy(widgetPalette = palette, themeMode = theme), WidgetKind.MEALS)
+                val colors = WidgetColors.resolve(context, data.preferences.copy(widgetPalette = palette, themeMode = theme))
                 assertTrue("Readable palette $palette $theme", ColorUtils.calculateContrast(colors.ink, colors.surface) >= 4.5)
                 assertTrue("Readable card $palette $theme", ColorUtils.calculateContrast(colors.ink, colors.cardSurface) >= 4.5)
                 assertTrue("Readable meal chip $palette $theme", ColorUtils.calculateContrast(colors.onAccent, colors.accent) >= 4.5)
                 assertTrue("Readable selected row $palette $theme", ColorUtils.calculateContrast(colors.onContainer, colors.container) >= 4.5)
-                assertEquals(colors, WidgetColors.resolve(context, data.preferences.copy(widgetPalette = palette, themeMode = theme), WidgetKind.TIMETABLE))
                 val flat = colors.background(300, 200)
                 assertEquals("Flat surface replaces decorative waves", flat.getPixel(flat.width / 2, flat.height / 2), flat.getPixel(flat.width / 2, flat.height * 4 / 5))
                 flat.recycle()
                 if (palette == WidgetPalette.APP) assertEquals(neoColorScheme(context, data.preferences.copy(widgetPalette = palette, themeMode = theme)).primary.toArgb(), colors.accent)
             }
+            // Extra NEIS meal types switch to a scrolling list without changing host size.
+            val extraMeals = data.copy(meals = data.meals!!.copy(meals = data.meals.meals + listOf(
+                MealEntry(data.date.toString(), "4", "특별식", "", listOf("특별검증밥")),
+                MealEntry(data.date.toString(), "5", "추가식", "", listOf("추가검증밥")),
+            )))
+            main { views[3].updateAppWidget(WidgetRenderer.responsive(context, ids[3], WidgetKind.MEALS,
+                manager.getAppWidgetOptions(ids[3]), extraMeals)) }
+            eventually {
+                var ready = false
+                main { ready = views[3].findViewById<ListView>(R.id.widget_list)?.adapter?.count == 4 }
+                ready
+            }
+            main { views[3].findViewById<ListView>(R.id.widget_list).setSelection(3) }
+            eventually { var found = false; main { found = texts(views[3]).any { it.contains("추가검증밥") } }; found }
+
             repository.setMealSchool(data.preferences.selection!!.school.code, null)
             WidgetRenderer.updateAll(context)
             eventually { var ready = false; main { ready = texts(views[3]).any { it.contains("급식 학교를") } && texts(views[3]).none { it.contains("검증밥") } }; ready }

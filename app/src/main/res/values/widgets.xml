@@ -1,13 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-<string name="widget_timetable_label">오늘의 시간표 · 2×2</string><string name="widget_timetable_wide_label">오늘의 시간표 · 4×2</string>
-<string name="widget_meals_label">오늘의 급식 · 2×2</string><string name="widget_meals_wide_label">오늘의 급식 · 4×2</string>
-<string name="widget_timetable_description">오늘의 수업과 다음 시작 시각을 앱과 같은 Material 색상으로 확인해요.</string>
-<string name="widget_meals_description">메뉴가 있는 식사만 카드로 보여드려요. 긴 메뉴는 스크롤해요.</string>
-<string name="widget_refresh_label">위젯 새로고침</string><string name="widget_refresh_symbol">↻</string>
-<string name="widget_today_label">오늘</string><string name="widget_after_label">이후 수업</string>
-<string name="widget_loading_text">컴시간neo\n시간표·급식을 불러와요</string>
-<string name="widget_preview_timetable_label">오늘의 시간표</string><string name="widget_preview_timetable_subject">수학</string>
-<string name="widget_preview_timetable_details">다음 수업 · 3교시\n10:20 시작\n\n이후 4교시 영어</string>
-<string name="widget_preview_meals_label">오늘의 급식</string><string name="widget_preview_meal_chip">중식</string>
-<string name="widget_preview_meals_details">현미밥\n미역국\n배추김치</string>
+    <string
+        name="widget_timetable_label">오늘의 시간표 · 2×2</string>
+    <string
+        name="widget_timetable_wide_label">오늘의 시간표 · 4×2</string>
+    <string
+        name="widget_meals_label">오늘의 급식 · 2×2</string>
+    <string
+        name="widget_meals_wide_label">오늘의 급식 · 4×2</string>
+    <string
+        name="widget_timetable_description">오늘의 수업과 다음 시작 시각을 앱과 같은 Material 색상으로 확인해요.</string>
+    <string
+        name="widget_meals_description">메뉴가 있는 식사만 카드로 보여드려요. 긴 메뉴는 스크롤해요.</string>
+    <string
+        name="widget_refresh_label">위젯 새로고침</string>
+    <string
+        name="widget_today_label">오늘</string>
+    <string
+        name="widget_after_label">이후 수업</string>
+    <string
+        name="widget_loading_text">컴시간neo\n시간표·급식을 불러와요</string>
+    <string
+        name="widget_preview_timetable_label">오늘의 시간표</string>
+    <string
+        name="widget_preview_timetable_subject">수학</string>
+    <string
+        name="widget_preview_timetable_details">다음 수업 · 3교시\n10:20 시작\n\n이후 4교시 영어</string>
+    <string
+        name="widget_preview_meals_label">오늘의 급식</string>
+    <string
+        name="widget_preview_meal_chip">중식</string>
+    <string
+        name="widget_preview_meals_details">현미밥\n미역국\n배추김치</string>
 </resources>

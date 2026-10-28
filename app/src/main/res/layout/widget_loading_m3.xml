@@ -1,1 +1,13 @@
-<TextView xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:padding="16dp" android:background="@drawable/widget_m3_preview" android:text="@string/widget_loading_text" android:textColor="#49454F" android:textSize="14sp" android:fontFamily="sans-serif"/>
+<?xml version="1.0" encoding="utf-8"?>
+<TextView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center"
+    android:padding="16dp"
+    android:background="@drawable/widget_m3_preview"
+    android:text="@string/widget_loading_text"
+    android:textColor="#49454F"
+    android:textSize="14sp"
+    android:fontFamily="sans-serif" />

@@ -28,7 +28,7 @@ fun WidgetSettings(state: NeoState, viewModel: NeoViewModel) {
         for (palettes in WidgetPalette.entries.chunked(3)) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 palettes.forEach { palette ->
-                    val colors = WidgetColors.resolve(context, state.preferences.copy(widgetPalette = palette), WidgetKind.TIMETABLE)
+                    val colors = WidgetColors.resolve(context, state.preferences.copy(widgetPalette = palette))
                     FilterChip(selected = state.preferences.widgetPalette == palette, onClick = { viewModel.widgetPalette(palette) }, label = { Text(palette.label) },
                         leadingIcon = { Box(Modifier.size(12.dp).background(Color(colors.accent), CircleShape)) })
                 }
