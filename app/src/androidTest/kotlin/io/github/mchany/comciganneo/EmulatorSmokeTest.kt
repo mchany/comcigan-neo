@@ -47,6 +47,19 @@ class EmulatorSmokeTest {
         compose.onNodeWithText("중일고등학교").performScrollTo().performClick()
         waitFor(hasText("이 학급으로 시작"))
         compose.onNodeWithText("이 학급으로 시작").performScrollTo().performClick()
+        waitFor(hasText("급식 학교 선택") or hasText("오늘"))
+        if (compose.onAllNodesWithText("급식 학교 선택").fetchSemanticsNodes().isNotEmpty()) {
+            screenshot("00-meal-setup")
+            val mealSchoolResult = hasText("중일고등학교") and hasClickAction() and !hasSetTextAction()
+            waitFor(mealSchoolResult)
+            compose.onNode(mealSchoolResult).performScrollTo().performClick()
+            waitFor(hasText("이 학교 연결"))
+            compose.onNodeWithText("이 학교 연결").performClick()
+        }
+        waitFor(hasText("초기 설정 · 3/3") or hasText("오늘"))
+        if (compose.onAllNodesWithText("초기 설정 · 3/3").fetchSemanticsNodes().isNotEmpty()) {
+            compose.onNodeWithText("설정 완료").performScrollTo().performClick()
+        }
         waitFor(hasText("오늘"))
         compose.onNodeWithText("오늘").performClick()
         waitFor(hasTestTag("today-viewport"))

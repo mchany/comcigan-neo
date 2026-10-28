@@ -23,6 +23,7 @@ data class NeoState(
     val classCounts: List<Int> = emptyList(),
     val setupError: String? = null,
     val meal: MealState = MealState(),
+    val notificationSetupSaving: Boolean = false,
 ) {
     val mealSchool: NeisSchoolRef? get() = preferences.mealSchools[preferences.selection?.school?.code.toString()]
 }
@@ -139,6 +140,21 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
     fun theme(mode: ThemeMode) = setting { repository.theme(mode) }
     fun dynamic(enabled: Boolean) = setting { repository.dynamic(enabled) }
     fun teachers(enabled: Boolean) = setting { repository.teachers(enabled) }
+    fun widgetPalette(palette: WidgetPalette) = setting { repository.widgetPalette(palette) }
+    fun notificationEnabled(kind: NotificationKind, enabled: Boolean) = setting { repository.updateNotification(kind, enabled = enabled) }
+    fun notificationTime(kind: NotificationKind, minutes: Int) = setting { repository.updateNotification(kind, minutes = minutes) }
+    fun backToMealSetup() = setting { repository.returnToMealSetup() }
+    fun finishNotificationSetup() {
+        if (mutable.value.notificationSetupSaving) return
+        viewModelScope.launch {
+            mutable.update { it.copy(notificationSetupSaving = true, error = null) }
+            try {
+                repository.finishInitialSetup()
+                mutable.update { it.copy(notificationSetupSaving = false) }
+            } catch (e: CancellationException) { throw e }
+              catch (_: Exception) { mutable.update { it.copy(notificationSetupSaving = false, error = "알림 설정을 저장하지 못했어요. 다시 시도해 주세요.") } }
+        }
+    }
     fun clearCache() = setting {
         loadJob?.cancelAndJoin()
         mealJob?.cancelAndJoin()
@@ -192,6 +208,18 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
     fun openMealConnection() {
         mutable.update { it.copy(meal = it.meal.copy(connecting = true, connectionError = null)) }
         if (mutable.value.preferences.mealKeyConfigured) searchMealSchools(mutable.value.preferences.selection?.school?.name.orEmpty())
+    }
+    fun skipInitialMealSetup() {
+        if (mutable.value.meal.saving) return
+        viewModelScope.launch {
+            mutable.update { it.copy(meal = it.meal.copy(saving = true, connectionError = null)) }
+            try {
+                repository.finishMealSetup()
+                mealSearchJob?.cancel()
+                mutable.update { it.copy(meal = it.meal.copy(saving = false, searching = false)) }
+            } catch (e: CancellationException) { throw e }
+              catch (_: Exception) { mutable.update { it.copy(meal = it.meal.copy(saving = false, connectionError = "설정을 저장하지 못했어요. 다시 시도해 주세요.")) } }
+        }
     }
     fun closeMealConnection() {
         if (mutable.value.meal.saving) return

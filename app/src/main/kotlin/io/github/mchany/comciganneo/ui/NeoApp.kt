@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -44,11 +45,17 @@ private val Korean = Locale.KOREAN
 private val DateLabel = DateTimeFormatter.ofPattern("M월 d일 EEEE", Korean)
 
 @Composable
-fun NeoApp(viewModel: NeoViewModel) {
+fun NeoApp(viewModel: NeoViewModel, notificationTarget: String? = null, notificationEvent: Int = 0) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(NeoTab.TODAY) }
     var detail by remember { mutableStateOf<LessonSlot?>(null) }
     var now by remember { mutableStateOf(ZonedDateTime.now(SchoolZone)) }
+    LaunchedEffect(notificationEvent) {
+        when (notificationTarget) {
+            "timetable" -> { tab = NeoTab.TODAY; viewModel.week(0) }
+            "meals" -> { tab = NeoTab.MEALS; viewModel.mealDate(schoolToday()) }
+        }
+    }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
@@ -64,6 +71,8 @@ fun NeoApp(viewModel: NeoViewModel) {
             when {
                 state.initializing -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 state.preferences.selection == null || state.setup -> SetupScreen(state, viewModel)
+                state.preferences.initialSetupPending -> InitialMealSetupScreen(state, viewModel)
+                state.preferences.notificationSetupPending -> InitialNotificationSetupScreen(state, viewModel)
                 else -> {
                     val selection = state.preferences.selection!!
                     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -133,7 +142,7 @@ private fun SetupScreen(state: NeoState, viewModel: NeoViewModel) {
     val canClose = state.preferences.selection != null
     BackHandler(canClose, onBack = viewModel::closeSetup)
     Scaffold(topBar = {
-        TopAppBar(title = { Text("컴시간neo") }, navigationIcon = {
+        TopAppBar(title = { Text(if (state.preferences.selection == null || state.preferences.initialSetupPending) "초기 설정 · 1/3" else "컴시간neo") }, navigationIcon = {
             if (canClose) IconButton(onClick = viewModel::closeSetup) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "돌아가기") }
         })
     }) { padding ->
@@ -206,7 +215,7 @@ private fun SettingsScreen(state: NeoState, viewModel: NeoViewModel) {
     val uriHandler = LocalUriHandler.current
     var clearDialog by remember { mutableStateOf(false) }
     var licenses by remember { mutableStateOf(false) }
-    LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+    LazyColumn(Modifier.testTag("settings-list"), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         item { Text("내게 맞게", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
         item {
             SettingsGroup("학교·학급") {
@@ -233,10 +242,16 @@ private fun SettingsScreen(state: NeoState, viewModel: NeoViewModel) {
             SettingsGroup("급식") { MealSettings(state, viewModel) }
         }
         item {
+            SettingsGroup("알림") { NotificationSettings(state, viewModel) }
+        }
+        item {
+            SettingsGroup("위젯") { WidgetSettings(state, viewModel) }
+        }
+        item {
             SettingsGroup("데이터") {
                 ListItem(headlineContent = { Text("저장된 시간표·급식 삭제") }, supportingContent = { Text("학교·학급과 화면 설정은 유지돼요") },
                     modifier = Modifier.clickable { clearDialog = true }, trailingContent = { Icon(Icons.Rounded.DeleteOutline, null) })
-                Text("앱을 열면 저장된 시간표를 먼저 보여주고, 마지막 조회 후 5분이 지나면 갱신해요. 알림과 위젯은 후속 버전에서 지원할 예정입니다.", Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("앱을 열면 저장된 시간표를 먼저 보여주고, 마지막 조회 후 5분이 지나면 갱신해요. 위젯도 저장된 자료를 사용하며 주기적으로 갱신합니다.", Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         item {
