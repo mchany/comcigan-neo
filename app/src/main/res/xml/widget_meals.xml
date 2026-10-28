@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:targetApi="s"
+    android:minWidth="146dp"
+    android:minHeight="146dp"
+    android:minResizeWidth="130dp"
+    android:minResizeHeight="136dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
+    android:maxResizeWidth="700dp"
+    android:maxResizeHeight="600dp"
+    android:updatePeriodMillis="1800000"
+    android:initialLayout="@layout/widget_loading_m3"
+    android:previewLayout="@layout/widget_preview_meals_m3"
+    android:description="@string/widget_meals_description"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen" />

@@ -23,8 +23,9 @@ data class NeoState(
     val classCounts: List<Int> = emptyList(),
     val setupError: String? = null,
     val meal: MealState = MealState(),
+    val notificationSetupSaving: Boolean = false,
 ) {
-    val mealSchool: NeisSchoolRef? get() = preferences.mealSchools[preferences.selection?.school?.code.toString()]
+    val mealSchool: NeisSchoolRef? get() = preferences.mealSchool
 }
 
 class NeoViewModel(private val repository: AppRepository) : ViewModel() {
@@ -105,7 +106,7 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
         }
         val meal = mutable.value.meal
         if (!meal.loading && mutable.value.mealSchool != null && mutable.value.preferences.mealKeyConfigured &&
-            (meal.snapshot?.isFresh(LocalDate.parse(meal.date)) != true || meal.todaySnapshot?.isFresh(today) != true)) loadMeals()
+            meal.snapshot?.isFresh(LocalDate.parse(meal.date)) != true) loadMeals()
         val snapshot = mutable.value.snapshot
         if (!mutable.value.loading && mutable.value.preferences.selection != null &&
             (snapshot == null || snapshot.weekStart != weekStart(offset = mutable.value.week).toString() ||
@@ -139,12 +140,27 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
     fun theme(mode: ThemeMode) = setting { repository.theme(mode) }
     fun dynamic(enabled: Boolean) = setting { repository.dynamic(enabled) }
     fun teachers(enabled: Boolean) = setting { repository.teachers(enabled) }
+    fun widgetPalette(palette: WidgetPalette) = setting { repository.widgetPalette(palette) }
+    fun notificationEnabled(kind: NotificationKind, enabled: Boolean) = setting { repository.updateNotification(kind, enabled = enabled) }
+    fun notificationTime(kind: NotificationKind, minutes: Int) = setting { repository.updateNotification(kind, minutes = minutes) }
+    fun backToMealSetup() = setting { repository.returnToMealSetup() }
+    fun finishNotificationSetup() {
+        if (mutable.value.notificationSetupSaving) return
+        viewModelScope.launch {
+            mutable.update { it.copy(notificationSetupSaving = true, error = null) }
+            try {
+                repository.finishInitialSetup()
+                mutable.update { it.copy(notificationSetupSaving = false) }
+            } catch (e: CancellationException) { throw e }
+              catch (_: Exception) { mutable.update { it.copy(notificationSetupSaving = false, error = "알림 설정을 저장하지 못했어요. 다시 시도해 주세요.") } }
+        }
+    }
     fun clearCache() = setting {
         loadJob?.cancelAndJoin()
         mealJob?.cancelAndJoin()
         repository.clearCache()
         mutable.update { it.copy(snapshot = null, loading = false, error = "저장된 시간표와 급식을 삭제했어요. 새로고침하면 다시 가져옵니다.",
-            meal = it.meal.copy(snapshot = null, todaySnapshot = null, loading = false, error = "저장된 급식을 삭제했어요.")) }
+            meal = it.meal.copy(snapshot = null, loading = false, error = "저장된 급식을 삭제했어요.")) }
     }
 
     fun mealDate(date: LocalDate) {
@@ -157,41 +173,34 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
         mealJob?.cancel()
         val school = mutable.value.mealSchool ?: return
         val date = LocalDate.parse(mutable.value.meal.date)
-        val today = schoolToday()
         mealJob = viewModelScope.launch {
-            mutable.update { it.copy(meal = it.meal.copy(loading = true, error = null, todayError = null,
-                snapshot = it.meal.snapshot?.takeIf { s -> s.school == school && s.weekStart == weekStart(date).toString() },
-                todaySnapshot = it.meal.todaySnapshot?.takeIf { s -> s.school == school && s.weekStart == weekStart(today).toString() })) }
+            mutable.update { it.copy(meal = it.meal.copy(loading = true, error = null,
+                snapshot = it.meal.snapshot?.takeIf { s -> s.school == school && s.weekStart == weekStart(date).toString() })) }
             try {
                 val cache = repository.cachedMeals(school, date)
-                val todayCache = if (weekStart(date) == weekStart(today)) cache else repository.cachedMeals(school, today)
-                mutable.update { it.copy(meal = it.meal.copy(snapshot = cache, todaySnapshot = todayCache)) }
-                try {
-                    val snapshot = repository.refreshMeals(school, date, force)
-                    ensureActive()
-                    mutable.update { it.copy(meal = it.meal.copy(snapshot = snapshot,
-                        todaySnapshot = if (weekStart(date) == weekStart(today)) snapshot else it.meal.todaySnapshot)) }
-                } catch (e: CancellationException) { throw e }
-                  catch (e: Exception) {
-                    mutable.update { it.copy(meal = it.meal.copy(error = mealUserMessage(e),
-                        todayError = if (weekStart(date) == weekStart(today)) mealUserMessage(e) else null)) }
-                }
-                if (weekStart(date) != weekStart(today)) {
-                    try {
-                        val todaySnapshot = repository.refreshMeals(school, today, force)
-                        ensureActive()
-                        mutable.update { it.copy(meal = it.meal.copy(todaySnapshot = todaySnapshot)) }
-                    } catch (e: CancellationException) { throw e }
-                      catch (e: Exception) { mutable.update { it.copy(meal = it.meal.copy(todayError = mealUserMessage(e))) } }
-                }
-                mutable.update { it.copy(meal = it.meal.copy(loading = false)) }
+                mutable.update { it.copy(meal = it.meal.copy(snapshot = cache)) }
+                val snapshot = repository.refreshMeals(school, date, force)
+                ensureActive()
+                mutable.update { it.copy(meal = it.meal.copy(snapshot = snapshot, loading = false)) }
             } catch (e: CancellationException) { throw e }
-              catch (e: Exception) { mutable.update { it.copy(meal = it.meal.copy(loading = false, error = mealUserMessage(e), todayError = mealUserMessage(e))) } }
+              catch (e: Exception) { mutable.update { it.copy(meal = it.meal.copy(loading = false, error = mealUserMessage(e))) } }
         }
     }
     fun openMealConnection() {
         mutable.update { it.copy(meal = it.meal.copy(connecting = true, connectionError = null)) }
         if (mutable.value.preferences.mealKeyConfigured) searchMealSchools(mutable.value.preferences.selection?.school?.name.orEmpty())
+    }
+    fun skipInitialMealSetup() {
+        if (mutable.value.meal.saving) return
+        viewModelScope.launch {
+            mutable.update { it.copy(meal = it.meal.copy(saving = true, connectionError = null)) }
+            try {
+                repository.finishMealSetup()
+                mealSearchJob?.cancel()
+                mutable.update { it.copy(meal = it.meal.copy(saving = false, searching = false)) }
+            } catch (e: CancellationException) { throw e }
+              catch (_: Exception) { mutable.update { it.copy(meal = it.meal.copy(saving = false, connectionError = "설정을 저장하지 못했어요. 다시 시도해 주세요.")) } }
+        }
     }
     fun closeMealConnection() {
         if (mutable.value.meal.saving) return
@@ -233,7 +242,7 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
             mealJob?.cancelAndJoin()
             try {
                 repository.clearMealCache()
-                mutable.update { it.copy(meal = it.meal.copy(snapshot = null, todaySnapshot = null, loading = false, error = "저장된 급식을 삭제했어요.")) }
+                mutable.update { it.copy(meal = it.meal.copy(snapshot = null, loading = false, error = "저장된 급식을 삭제했어요.")) }
             } catch (e: CancellationException) { throw e }
               catch (_: Exception) { mutable.update { it.copy(meal = it.meal.copy(error = "저장된 급식을 삭제하지 못했어요.")) } }
         }

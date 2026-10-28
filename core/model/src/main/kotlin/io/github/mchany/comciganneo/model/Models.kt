@@ -52,4 +52,12 @@ data class AppPreferences(
     val showTeachers: Boolean = true,
     val mealSchools: Map<String, NeisSchoolRef> = emptyMap(),
     val mealKeyConfigured: Boolean = false,
-)
+    val initialSetupPending: Boolean = false,
+    val notificationSetupPending: Boolean = false,
+    val timetableNotification: DailyNotificationSettings = DailyNotificationSettings(minutes = 7 * 60 + 30),
+    val mealNotification: DailyNotificationSettings = DailyNotificationSettings(minutes = 11 * 60 + 30),
+    val widgetPalette: WidgetPalette = WidgetPalette.APP,
+) {
+    val mealSchool: NeisSchoolRef?
+        get() = selection?.let { mealSchools[it.school.code.toString()] }
+}

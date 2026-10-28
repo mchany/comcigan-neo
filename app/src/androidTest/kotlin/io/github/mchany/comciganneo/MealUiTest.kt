@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.room.Room
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.mchany.comciganneo.data.*
@@ -46,14 +47,16 @@ class MealUiTest {
             val entries = listOf(MealType.LUNCH, MealType.DINNER).map { type -> MealEntry(today.toString(), type.code, type.label,
                 "검증밥 100g", listOf(if (type == MealType.LUNCH) "검증밥 100g (5.6)" else "검증석식 (1.2)"), "700.0 Kcal",
                 nutrition = "단백질(g): 20", origin = "쌀: 국내산") }
-            for (week in setOf(weekStart(today), weekStart(today.plusDays(1)))) {
-                val snapshot = MealSnapshot(school, week.toString(), now, entries.filter { weekStart(java.time.LocalDate.parse(it.date)) == week })
+            val allEntries = entries + entries.last().copy(date = today.plusWeeks(1).toString(), menu = listOf("다음주검증석식"))
+            for (week in setOf(weekStart(today), weekStart(today.plusDays(1)), weekStart(today.plusWeeks(1)))) {
+                val snapshot = MealSnapshot(school, week.toString(), now, allEntries.filter { weekStart(java.time.LocalDate.parse(it.date)) == week })
                 database.meals().save(MealSnapshotEntity(school.officeCode, school.schoolCode, snapshot.weekStart, Json.encodeToString(snapshot)))
             }
         } finally { database.close() }
         val repository = AppRepository(context)
         repository.setMealSchool(selection.school.code, school)
         repository.select(selection)
+        repository.finishInitialSetup()
         repository.theme(ThemeMode.LIGHT)
         waitFor(hasText("검증수업 선생님"))
         compose.onNodeWithText("오늘 중식").assertDoesNotExist()
@@ -61,6 +64,9 @@ class MealUiTest {
         screenshot("meal-01-today")
         compose.onNodeWithText("급식", useUnmergedTree = false).performClick()
         waitFor(hasText("오늘은 무슨 메뉴?"))
+        compose.onNodeWithText("급식 학교 변경").assertDoesNotExist()
+        compose.onNodeWithText("급식 학교 연결").assertDoesNotExist()
+        compose.onNodeWithText("검증 주소 123").assertDoesNotExist()
         compose.onNodeWithText("검증밥 100g (5.6)").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("영양정보").performScrollTo().performClick()
         compose.onNodeWithText("단백질(g): 20").performScrollTo().assertIsDisplayed()
@@ -72,6 +78,15 @@ class MealUiTest {
         screenshot("meal-03-empty")
         compose.onNodeWithText("오늘로 이동").performScrollTo().performClick()
         compose.onNodeWithText("검증석식 (1.2)").performScrollTo().assertIsDisplayed()
+        // Changing weeks must display the selected week's cache and return to today.
+        compose.runOnUiThread {
+            ViewModelProvider(compose.activity)[NeoViewModel::class.java].mealDate(today.plusWeeks(1))
+        }
+        waitFor(hasText("다음주검증석식"))
+        compose.onNodeWithText("다음주검증석식").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("검증석식 (1.2)").assertDoesNotExist()
+        compose.onNodeWithText("오늘로 이동").performScrollTo().performClick()
+        compose.onNodeWithText("검증석식 (1.2)").performScrollTo().assertIsDisplayed()
         repository.theme(ThemeMode.DARK)
         compose.activityRule.scenario.recreate()
         waitFor(hasText("오늘은 무슨 메뉴?"))
@@ -79,6 +94,7 @@ class MealUiTest {
         compose.onNodeWithText("검증석식 (1.2)").performScrollTo().assertIsDisplayed()
         screenshot("meal-04-recreated-dark")
         compose.onNodeWithText("설정", useUnmergedTree = false).performClick()
+        compose.onNodeWithText("연결 관리").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("나이스 인증키 설정").assertDoesNotExist()
         compose.onNodeWithText("나이스 인증키 변경").assertDoesNotExist()
         compose.onAllNodes(hasSetTextAction()).assertCountEquals(0)

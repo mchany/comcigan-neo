@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:background="@drawable/widget_m3_preview">
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/widget_preview_timetable_label"
+        android:textSize="14sp"
+        android:textColor="#65558F"
+        android:fontFamily="sans-serif-medium" />
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/widget_preview_timetable_subject"
+        android:textSize="24sp"
+        android:textColor="#1D1B20"
+        android:textStyle="bold"
+        android:layout_marginTop="12dp" />
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/widget_preview_timetable_details"
+        android:textSize="12sp"
+        android:textColor="#49454F"
+        android:layout_marginTop="8dp" />
+</LinearLayout>
