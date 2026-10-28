@@ -8,6 +8,18 @@ class DailyNotificationTest {
     private val today = LocalDate.of(2026, 10, 28)
     private val selection = ClassSelection(School(1, "검증고", "대전"), 2, 1)
 
+    @Test fun deliveredTimesRemainIndependentAndOldDaysArePruned() {
+        val morning = notificationDeliverySlot(today, 450)
+        val evening = notificationDeliverySlot(today, 23 * 60)
+        val first = recordNotificationDelivery(setOf(notificationDeliverySlot(today.minusDays(1), 450)), today, 450)
+        assertEquals(setOf(morning), first)
+        assertFalse(evening in first)
+        val second = recordNotificationDelivery(first, today, 23 * 60)
+        assertEquals(setOf(morning, evening), second)
+        assertEquals(second, recordNotificationDelivery(second, today, 23 * 60))
+        assertEquals(setOf(notificationDeliverySlot(today.plusDays(1), 450)), recordNotificationDelivery(second, today.plusDays(1), 450))
+    }
+
     @Test fun timeBoundaryAndKoreanTimezone() {
         val now = ZonedDateTime.parse("2026-10-27T22:30:00Z")
         assertEquals("2026-10-29T07:30+09:00[Asia/Seoul]", nextDailyNotification(450, now).toString())

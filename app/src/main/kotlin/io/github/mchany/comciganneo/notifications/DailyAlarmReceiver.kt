@@ -34,7 +34,7 @@ class DailyAlarmReceiver : BroadcastReceiver() {
                             .setInputData(workDataOf("kind" to due.name, "date" to date, "minutes" to minutes))
                             .addTag(due.key)
                         if (Build.VERSION.SDK_INT >= 31) builder.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-                        WorkManager.getInstance(context).enqueueUniqueWork("daily-${due.key}-$date", ExistingWorkPolicy.KEEP, builder.build())
+                        WorkManager.getInstance(context).enqueueUniqueWork("daily-${due.key}-$date-$minutes", ExistingWorkPolicy.KEEP, builder.build())
                             .result.get(3, TimeUnit.SECONDS)
                     }
                 }

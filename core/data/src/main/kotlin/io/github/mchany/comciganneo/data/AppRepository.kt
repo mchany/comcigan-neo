@@ -89,10 +89,15 @@ class AppRepository(context: Context, private val defaultNeisKey: String = "") {
             minutes?.let { value -> it[intPreferencesKey("notification_${kind.key}_minutes")] = value }
         }
     }
-    suspend fun notificationDelivered(kind: NotificationKind, date: LocalDate): Boolean =
-        context.settings.data.first()[stringPreferencesKey("notification_${kind.key}_delivered")] == date.toString()
-    suspend fun markNotificationDelivered(kind: NotificationKind, date: LocalDate) {
-        context.settings.edit { it[stringPreferencesKey("notification_${kind.key}_delivered")] = date.toString() }
+    suspend fun notificationDelivered(kind: NotificationKind, date: LocalDate, minutes: Int): Boolean =
+        notificationDeliverySlot(date, minutes) in context.settings.data.first()[stringSetPreferencesKey("notification_${kind.key}_delivered_slots")].orEmpty()
+    suspend fun markNotificationDelivered(kind: NotificationKind, date: LocalDate, minutes: Int) {
+        context.settings.edit { data ->
+            val key = stringSetPreferencesKey("notification_${kind.key}_delivered_slots")
+            data[key] = recordNotificationDelivery(data[key].orEmpty(), date, minutes)
+            // The old date-only record cannot identify which configured time was delivered.
+            data.remove(stringPreferencesKey("notification_${kind.key}_delivered"))
+        }
     }
     suspend fun theme(mode: ThemeMode) { context.settings.edit { it[themeKey] = mode.name } }
     suspend fun dynamic(enabled: Boolean) { context.settings.edit { it[dynamicKey] = enabled } }

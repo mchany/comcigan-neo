@@ -17,7 +17,7 @@ class DailyNotificationWorker(context: Context, parameters: WorkerParameters) : 
         val preferences = repository.preferences.first()
         val minutes = inputData.getInt("minutes", -1)
         if (!isNotificationReady(preferences, kind) || preferences.notification(kind).minutes != minutes ||
-            !DailyNotificationPublisher.allowed(applicationContext, kind) || repository.notificationDelivered(kind, date)) return Result.success()
+            !DailyNotificationPublisher.allowed(applicationContext, kind) || repository.notificationDelivered(kind, date, minutes)) return Result.success()
         val selection = preferences.selection!!
         val school = preferences.mealSchool
         try {
@@ -42,7 +42,8 @@ class DailyNotificationWorker(context: Context, parameters: WorkerParameters) : 
                     if (kind == NotificationKind.TIMETABLE) selection.school.name else school?.name.orEmpty(),
                     "자료를 가져오지 못했어요. 인터넷 연결을 확인하고 앱에서 다시 조회해 주세요.")
             }
-            if (DailyNotificationPublisher.post(applicationContext, kind, text, date)) repository.markNotificationDelivered(kind, date)
+            if (repository.notificationDelivered(kind, date, minutes)) return Result.success()
+            if (DailyNotificationPublisher.post(applicationContext, kind, text, date)) repository.markNotificationDelivered(kind, date, minutes)
             return Result.success()
         } catch (e: CancellationException) { throw e }
           catch (_: Exception) { return if (runAttemptCount < 2 && schoolToday() == date) Result.retry() else Result.failure() }
