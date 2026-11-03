@@ -14,6 +14,12 @@ class ComciganParserTest {
         일일자료=Q자료(자료.자료14[g][c][d][p]);
         원자료=Q자료(자료.자료15[g][c][d][p]);
     """.trimIndent()
+    private fun obfuscatedPage(source: String, key: Int = 83): String {
+        val encoded = source.mapIndexed { index, char ->
+            "%04X".format(char.code xor ((key + index * 13) and 255))
+        }.joinToString("")
+        return """/* hour-obfuscated-v2 */(function(a,k){var s='';})([[0,"$encoded"]],$key);"""
+    }
     private val selection = ClassSelection(School(12045, "테스트고", "테스트"), 1, 1)
     private fun fixture(marked: Boolean = true, divisor: Int = 1000): String = buildJsonObject {
         put("시작일", "2026-10-26")
@@ -43,6 +49,16 @@ class ComciganParserTest {
     }
     @Test fun `detects changed service page`() {
         assertFailsWith<StructureChanged> { ComciganParser.serviceCodes("<html>maintenance</html>") }
+    }
+    @Test fun `extracts service codes from obfuscated current page scripts`() {
+        val codes = ComciganParser.serviceCodes(obfuscatedPage(page()))
+        assertEquals("/1234567?9876l", codes.searchRoute)
+        assertEquals("98765", codes.requestPrefix)
+        assertEquals("자료11", codes.teacherField)
+        assertEquals("자료12", codes.subjectField)
+        assertEquals("자료13", codes.updatedField)
+        assertEquals("자료14", codes.currentField)
+        assertEquals("자료15", codes.originalField)
     }
     @Test fun `parses search padding and preserves separate school codes`() {
         val schools = ComciganParser.schools("{\"학교검색\":[[1,\"서울\",\"가고\",10],[1,\"경기\",\"가고\",20],[1,\"경기\",\"없음\",0]]}\u0000\r\n")
