@@ -31,7 +31,7 @@ data class ServiceCodes(
 
 object ComciganParser {
     private val obfuscatedScript = Regex(
-        """/\*\s*hour-obfuscated-v2\s*\*/\s*\(function\(a,k\)\{.*?}\)\((\[\[.*?]]),\s*(\d+)\s*\);""",
+        """/\*\s*hour-obfuscated-v2\s*\*/\s*\(function\(a,k\)\{.*?\}\)\((\[\[.*?\]\]),\s*(\d+)\s*\);""",
         RegexOption.DOT_MATCHES_ALL,
     )
 
