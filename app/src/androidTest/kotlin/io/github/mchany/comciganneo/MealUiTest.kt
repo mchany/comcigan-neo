@@ -21,9 +21,19 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 class MealUiTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    /**
+     * 역할: 화면에서 지정한 요소나 문구가 나타날 때까지 기다린다.
+     * 입력: matcher: SemanticsMatcher.
+     * 출력: 없음(Unit).
+     */
     private fun waitFor(matcher: SemanticsMatcher) {
         compose.waitUntil(20_000) { compose.onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty() }
     }
+    /**
+     * 역할: 현재 테스트 화면을 지정한 파일 이름으로 저장한다.
+     * 입력: name: String.
+     * 출력: 없음(Unit).
+     */
     private fun screenshot(name: String) {
         compose.waitForIdle()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -32,6 +42,11 @@ class MealUiTest {
         File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         bitmap.recycle()
     }
+    /**
+     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun cachedMealsDatesDetailsAndRecreation() = runBlocking<Unit> {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         check(context.packageName.endsWith(".smoke"))

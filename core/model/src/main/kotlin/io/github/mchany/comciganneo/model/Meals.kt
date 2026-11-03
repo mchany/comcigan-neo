@@ -16,6 +16,11 @@ data class NeisSchoolRef(
 @Serializable
 enum class MealType(val code: String, val label: String) {
     BREAKFAST("1", "조식"), LUNCH("2", "중식"), DINNER("3", "석식"), UNKNOWN("", "기타");
+    /**
+     * 역할: NEIS 급식 종류 코드를 해당 열거형 값으로 변환한다.
+     * 입력: code: String.
+     * 출력: MealType 값.
+     */
     companion object { fun fromCode(code: String) = entries.firstOrNull { it.code == code } ?: UNKNOWN }
 }
 
@@ -41,7 +46,17 @@ data class MealSnapshot(
     val fetchedAt: Long,
     val meals: List<MealEntry>,
 ) {
+    /**
+     * 역할: 지정한 날짜에 해당하는 급식 항목 목록을 반환한다.
+     * 입력: date: LocalDate.
+     * 출력: List<MealEntry> 값.
+     */
     fun forDate(date: LocalDate) = meals.filter { it.date == date.toString() }
+    /**
+     * 역할: 조회 시각과 날짜별 자료 유무를 기준으로 급식 캐시가 최신인지 확인한다.
+     * 입력: date: LocalDate, now: Long.
+     * 출력: Boolean 값.
+     */
     fun isFresh(date: LocalDate, now: Long = System.currentTimeMillis()): Boolean {
         val ttl = if (forDate(date).isEmpty()) 3_600_000L else 21_600_000L
         return now >= fetchedAt && now - fetchedAt < ttl

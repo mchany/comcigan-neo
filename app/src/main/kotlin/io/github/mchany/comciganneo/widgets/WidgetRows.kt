@@ -16,6 +16,11 @@ import io.github.mchany.comciganneo.model.WidgetKind
 data class WidgetRow(val kicker: String = "", val title: String = "", val body: String = "", val meta: String = "", val highlighted: Boolean = false,
     val secondary: String = "")
 
+/**
+ * 역할: 자료와 위젯 종류에 맞는 행 목록을 구성한다.
+ * 입력: data: WidgetData, kind: WidgetKind, section: String.
+ * 출력: List<WidgetRow> 값.
+ */
 fun widgetRows(data: WidgetData, kind: WidgetKind, section: String = "all"): List<WidgetRow> = when (kind) {
     WidgetKind.TIMETABLE -> data.lessons.map { slot -> WidgetRow(kicker = slot.period.toString(),
         body = listOfNotNull(slot.current?.subject, slot.current?.teacher?.takeIf { data.preferences.showTeachers && it.isNotBlank() }).joinToString(" "),
@@ -26,6 +31,11 @@ fun widgetRows(data: WidgetData, kind: WidgetKind, section: String = "all"): Lis
 }
 
 internal object WidgetCollection {
+    /**
+     * 역할: 위젯 목록 뷰에 행 데이터와 색상을 연결한다.
+     * 입력: context: Context, views: RemoteViews, listId: Int, widgetId: Int, kind: WidgetKind, section: String, data: WidgetData, colors: WidgetColors.
+     * 출력: 없음(Unit).
+     */
     fun bind(context: Context, views: RemoteViews, listId: Int, widgetId: Int, kind: WidgetKind, section: String, data: WidgetData, colors: WidgetColors) {
         views.setPendingIntentTemplate(listId, WidgetRenderer.openApp(context, kind, true))
         if (Build.VERSION.SDK_INT >= 31) {
@@ -40,6 +50,11 @@ internal object WidgetCollection {
         }
     }
 
+    /**
+     * 역할: 위젯 행 데이터에서 원격 뷰를 만든다.
+     * 입력: context: Context, row: WidgetRow, colors: WidgetColors, kind: WidgetKind, section: String.
+     * 출력: RemoteViews 값.
+     */
     fun rowView(context: Context, row: WidgetRow, colors: WidgetColors, kind: WidgetKind, section: String): RemoteViews {
         val layout = if (kind == WidgetKind.TIMETABLE) R.layout.widget_timetable_row_m3
             else if (section == "all") R.layout.widget_meal_card_m3 else R.layout.widget_menu_line_m3

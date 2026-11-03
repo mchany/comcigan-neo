@@ -12,11 +12,17 @@ $ErrorActionPreference = 'Stop'
 $target = 'io.github.mchany.comciganneo.smoke'
 $component = "$target/io.github.mchany.comciganneo.MainActivity"
 New-Item -ItemType Directory -Force $LogDirectory | Out-Null
+# 역할: ADB 명령을 실행하고 종료 코드를 확인한다.
+# 입력: 실행할 ADB 인수 배열.
+# 출력: 명령 출력을 반환하고 실패하면 예외를 발생시킨다.
 function Adb-Checked([string[]]$Arguments) {
     $output = & $Adb -s $Serial @Arguments
     if ($LASTEXITCODE -ne 0) { throw "ADB failed: $($Arguments[0])" }
     return $output
 }
+# 역할: 지정한 이름으로 기기 화면을 캡처한다.
+# 입력: 저장할 화면 캡처의 이름.
+# 출력: 캡처 파일 경로를 반환한다.
 function Read-Screen([string]$Name) {
     Adb-Checked @('shell','uiautomator','dump',"/sdcard/$Name.xml") | Out-Null
     $path = Join-Path $LogDirectory "$Name.xml"

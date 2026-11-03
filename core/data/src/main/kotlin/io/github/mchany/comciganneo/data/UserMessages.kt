@@ -5,6 +5,11 @@ import io.github.mchany.comciganneo.comcigan.TimetableUnavailable
 import io.github.mchany.comciganneo.neis.*
 import java.io.IOException
 
+/**
+ * 역할: 급식 오류를 사용자 안내 문구로 변환한다.
+ * 입력: error: Throwable.
+ * 출력: String 값.
+ */
 fun mealUserMessage(error: Throwable): String = when (error) {
     is NeisKeyRequired -> "급식 조회 설정이 없는 빌드예요. 최신 앱을 설치해 주세요."
     is NeisIncomplete -> "급식 자료를 모두 받지 못했어요. 잠시 후 다시 시도해 주세요."
@@ -18,6 +23,11 @@ fun mealUserMessage(error: Throwable): String = when (error) {
     else -> "급식을 가져오지 못했어요. 잠시 후 다시 시도해 주세요."
 }
 
+/**
+ * 역할: 오류를 사용자 안내 문구로 변환한다.
+ * 입력: error: Throwable.
+ * 출력: String 값.
+ */
 fun userMessage(error: Throwable): String = when (error) {
     is TimetableUnavailable -> "아직 게시된 시간표가 없어요. 나중에 다시 확인해 주세요."
     is StructureChanged -> "시간표 형식이 바뀌었거나 자료를 읽을 수 없어요. 앱 업데이트를 확인해 주세요."

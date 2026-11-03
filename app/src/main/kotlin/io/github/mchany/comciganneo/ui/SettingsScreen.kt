@@ -24,6 +24,11 @@ import io.github.mchany.comciganneo.NeoViewModel
 import io.github.mchany.comciganneo.model.ThemeMode
 
 @Composable
+/**
+ * 역할: 앱 설정 화면을 구성한다.
+ * 입력: state: NeoState, viewModel: NeoViewModel.
+ * 출력: 없음(Unit).
+ */
 internal fun SettingsScreen(state: NeoState, viewModel: NeoViewModel) {
     val uriHandler = LocalUriHandler.current
     var clearDialog by remember { mutableStateOf(false) }
@@ -90,6 +95,11 @@ internal fun SettingsScreen(state: NeoState, viewModel: NeoViewModel) {
 }
 
 @Composable
+/**
+ * 역할: 설정 항목을 제목과 함께 묶어 표시한다.
+ * 입력: title: String, content: @Composable ColumnScope.() -> Unit.
+ * 출력: 없음(Unit).
+ */
 private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)

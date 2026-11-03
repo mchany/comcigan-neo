@@ -15,9 +15,9 @@ data class DailyNotificationSettings(val enabled: Boolean = false, val minutes: 
 }
 
 /**
- * 알림 종류에 해당하는 사용자 설정을 선택한다.
+ * 역할: 알림 종류에 해당하는 사용자 설정을 반환한다.
  * 입력: 알림 종류와 앱 환경 설정.
- * 출력: 시간표 또는 급식 알림 설정을 반환한다.
+ * 출력: 해당 종류의 DailyNotificationSettings.
  */
 fun AppPreferences.notification(kind: NotificationKind) = when (kind) {
     NotificationKind.TIMETABLE -> timetableNotification
@@ -25,9 +25,9 @@ fun AppPreferences.notification(kind: NotificationKind) = when (kind) {
 }
 
 /**
- * 알림 발송에 필요한 사용자 설정이 준비됐는지 확인한다.
+ * 역할: 초기 설정 완료 여부와 종류별 필수 정보가 준비됐는지 확인한다.
  * 입력: 앱 환경 설정과 확인할 알림 종류.
- * 출력: 설정이 모두 준비됐으면 true, 아니면 false를 반환한다.
+ * 출력: Boolean 값.
  */
 fun isNotificationReady(preferences: AppPreferences, kind: NotificationKind): Boolean {
     val selection = preferences.selection ?: return false
@@ -36,9 +36,9 @@ fun isNotificationReady(preferences: AppPreferences, kind: NotificationKind): Bo
 }
 
 /**
- * 설정 시각을 기준으로 다음 알림 예정 시각을 계산한다.
+ * 역할: 한국 시간대에서 다음 일일 알림 시각을 계산한다.
  * 입력: 하루 중 분 단위 알림 시각과 현재 시각.
- * 출력: 한국 시간대의 다음 알림 시각을 반환한다.
+ * 출력: ZonedDateTime 값.
  */
 fun nextDailyNotification(minutes: Int, now: ZonedDateTime): ZonedDateTime {
     require(minutes in 0..1439)
@@ -48,9 +48,9 @@ fun nextDailyNotification(minutes: Int, now: ZonedDateTime): ZonedDateTime {
 }
 
 /**
- * 날짜와 분 단위 시각을 중복 확인용 식별자로 만든다.
+ * 역할: 날짜와 알림 시각으로 중복 발송 확인용 식별자를 만든다.
  * 입력: 알림 날짜와 분 단위 시각.
- * 출력: 날짜와 시각을 결합한 문자열을 반환한다.
+ * 출력: String 값.
  */
 fun notificationDeliverySlot(date: LocalDate, minutes: Int): String {
     require(minutes in 0..1439)
@@ -58,9 +58,9 @@ fun notificationDeliverySlot(date: LocalDate, minutes: Int): String {
 }
 
 /**
- * 오늘의 발송 기록을 저장하고 이전 날짜의 기록을 정리한다.
+ * 역할: 오늘 발송 시각을 기록하고 이전 날짜 기록을 정리한다.
  * 입력: 기존 발송 기록, 날짜, 분 단위 알림 시각.
- * 출력: 오늘 기록만 남기고 현재 발송 슬롯을 포함한 집합을 반환한다.
+ * 출력: Set<String> 값.
  */
 fun recordNotificationDelivery(existing: Set<String>, date: LocalDate, minutes: Int): Set<String> =
     existing.filterTo(mutableSetOf()) { it.startsWith("$date|") } + notificationDeliverySlot(date, minutes)
@@ -68,18 +68,18 @@ fun recordNotificationDelivery(existing: Set<String>, date: LocalDate, minutes: 
 data class DailyNotificationText(val title: String, val summary: String, val body: String)
 
 /**
- * 저장된 자료의 마지막 조회 시각을 알림에 표시할 문구로 만든다.
+ * 역할: 저장 자료의 마지막 조회 시각을 안내하는 문구를 만든다.
  * 입력: 자료를 조회한 시각의 epoch 밀리초 값.
- * 출력: 한국 시간 기준 조회 시각을 포함한 안내 문구를 반환한다.
+ * 출력: String 값.
  */
 private fun cachedNotice(fetchedAt: Long): String =
     "\n\n저장된 자료 · 마지막 조회 " + Instant.ofEpochMilli(fetchedAt).atZone(SchoolZone)
         .format(DateTimeFormatter.ofPattern("M.d HH:mm"))
 
 /**
- * 특정 날짜의 시간표 자료를 알림 제목, 요약, 본문으로 구성한다.
+ * 역할: 해당 날짜의 수업과 교사 표시 설정으로 시간표 알림 문구를 만든다.
  * 입력: 시간표 스냅샷, 날짜, 교사 표시 여부, 저장 자료 사용 여부.
- * 출력: 시간표 알림에 사용할 텍스트 묶음을 반환한다.
+ * 출력: DailyNotificationText 값.
  */
 fun timetableNotificationText(snapshot: TimetableSnapshot, date: LocalDate, showTeachers: Boolean, cached: Boolean = false): DailyNotificationText {
     val lessons = snapshot.slots.filter { it.date == date.toString() && it.current != null }.sortedBy { it.period }
@@ -92,9 +92,9 @@ fun timetableNotificationText(snapshot: TimetableSnapshot, date: LocalDate, show
 }
 
 /**
- * 특정 날짜의 급식 자료를 알림 제목, 요약, 본문으로 구성한다.
+ * 역할: 해당 날짜의 메뉴를 식사 순으로 정렬해 급식 알림 문구를 만든다.
  * 입력: 급식 스냅샷, 날짜, 저장 자료 사용 여부.
- * 출력: 급식 알림에 사용할 텍스트 묶음을 반환한다.
+ * 출력: DailyNotificationText 값.
  */
 fun mealNotificationText(snapshot: MealSnapshot, date: LocalDate, cached: Boolean = false): DailyNotificationText {
     val meals = snapshot.forDate(date).filter { entry -> entry.menu.any { it.isNotBlank() } }

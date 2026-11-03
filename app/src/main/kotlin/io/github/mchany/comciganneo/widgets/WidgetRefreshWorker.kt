@@ -9,6 +9,11 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 
 class WidgetRefreshWorker(context: Context, parameters: WorkerParameters) : CoroutineWorker(context, parameters) {
+    /**
+     * 역할: 위젯 자료 갱신 작업을 실행한다.
+     * 입력: 없음.
+     * 출력: Result 값.
+     */
     override suspend fun doWork(): Result {
         val kinds = NeoWidgets.instances(applicationContext).map { it.second }.toSet()
         if (kinds.isEmpty()) { NeoWidgets.synchronize(applicationContext); return Result.success() }
@@ -31,6 +36,11 @@ class WidgetRefreshWorker(context: Context, parameters: WorkerParameters) : Coro
         WidgetRenderer.updateAll(applicationContext)
         return Result.success()
     }
+    /**
+     * 역할: 제한 시간 안에 외부 자료를 조회한다.
+     * 입력: block: suspend () -> Unit.
+     * 출력: 없음(Unit).
+     */
     private suspend fun fetch(block: suspend () -> Unit) {
         withTimeoutOrNull(45_000) {
             try { block() } catch (e: CancellationException) { throw e } catch (_: Exception) { /* Keep dated cached data. */ }

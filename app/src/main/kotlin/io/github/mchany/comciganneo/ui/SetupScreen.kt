@@ -22,6 +22,11 @@ import io.github.mchany.comciganneo.NeoState
 import io.github.mchany.comciganneo.NeoViewModel
 
 @Composable
+/**
+ * 역할: 학교와 학급을 선택하는 설정 화면을 표시한다.
+ * 입력: state: NeoState, viewModel: NeoViewModel.
+ * 출력: 없음(Unit).
+ */
 internal fun SetupScreen(state: NeoState, viewModel: NeoViewModel) {
     var query by rememberSaveable { mutableStateOf("") }
     var grade by remember(state.candidate) { mutableIntStateOf(1) }
@@ -87,6 +92,11 @@ internal fun SetupScreen(state: NeoState, viewModel: NeoViewModel) {
 }
 
 @Composable
+/**
+ * 역할: 숫자 선택 UI를 표시하고 선택 결과를 전달한다.
+ * 입력: label: String, selected: Int, values: List<Int>, modifier: Modifier, onSelect: (Int) -> Unit.
+ * 출력: 없음(Unit).
+ */
 private fun NumberPicker(label: String, selected: Int, values: List<Int>, modifier: Modifier, onSelect: (Int) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box(modifier) {

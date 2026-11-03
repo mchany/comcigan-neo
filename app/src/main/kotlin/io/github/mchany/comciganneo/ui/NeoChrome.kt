@@ -19,6 +19,11 @@ import io.github.mchany.comciganneo.model.ClassSelection
 internal enum class NeoTab { TODAY, WEEK, MEALS, SETTINGS }
 
 @Composable
+/**
+ * 역할: 학교 정보와 설정 진입 버튼을 표시한다.
+ * 입력: selection: ClassSelection, compact: Boolean, openSetup: () -> Unit, refresh: (() -> Unit)?, refreshing: Boolean, meals: Boolean.
+ * 출력: 없음(Unit).
+ */
 internal fun NeoAppBar(selection: ClassSelection, compact: Boolean, openSetup: () -> Unit,
     refresh: (() -> Unit)?, refreshing: Boolean, meals: Boolean) {
     Surface {
@@ -38,6 +43,11 @@ internal fun NeoAppBar(selection: ClassSelection, compact: Boolean, openSetup: (
 }
 
 @Composable
+/**
+ * 역할: 앱의 화면 탭 이동 UI를 표시한다.
+ * 입력: tab: NeoTab, rail: Boolean, select: (NeoTab) -> Unit.
+ * 출력: 없음(Unit).
+ */
 internal fun NeoNavigation(tab: NeoTab, rail: Boolean, select: (NeoTab) -> Unit) {
     val fontScale = LocalDensity.current.fontScale
     val barHeight = (28f + 16f * fontScale).coerceAtLeast(56f).dp
@@ -45,6 +55,11 @@ internal fun NeoNavigation(tab: NeoTab, rail: Boolean, select: (NeoTab) -> Unit)
         Triple(NeoTab.WEEK, "주간", Icons.Rounded.CalendarViewWeek),
         Triple(NeoTab.MEALS, "급식", Icons.Rounded.Restaurant), Triple(NeoTab.SETTINGS, "설정", Icons.Rounded.Settings))
     Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
+        /**
+         * 역할: 화면 이동에 필요한 탭과 선택 항목 정보를 전달한다.
+         * 입력: item: Triple<NeoTab, String, androidx.compose.ui.graphics.vector.ImageVector>, modifier: Modifier.
+         * 출력: 없음(Unit).
+         */
         @Composable fun Destination(item: Triple<NeoTab, String, androidx.compose.ui.graphics.vector.ImageVector>, modifier: Modifier) {
             val selected = tab == item.first
             Column(modifier.selectable(selected = selected, role = Role.Tab, onClick = { select(item.first) }),

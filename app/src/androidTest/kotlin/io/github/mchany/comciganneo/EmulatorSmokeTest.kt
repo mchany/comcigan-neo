@@ -17,11 +17,21 @@ import java.time.format.DateTimeFormatter
 class EmulatorSmokeTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
+    /**
+     * 역할: 화면에서 지정한 요소나 문구가 나타날 때까지 기다린다.
+     * 입력: matcher: SemanticsMatcher, timeout: Long.
+     * 출력: 없음(Unit).
+     */
     private fun waitFor(matcher: SemanticsMatcher, timeout: Long = 45_000) {
         compose.waitUntil(timeoutMillis = timeout) {
             compose.onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty()
         }
     }
+    /**
+     * 역할: 현재 테스트 화면을 지정한 파일 이름으로 저장한다.
+     * 입력: name: String.
+     * 출력: 없음(Unit).
+     */
     private fun screenshot(name: String) {
         compose.waitForIdle()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -32,6 +42,11 @@ class EmulatorSmokeTest {
         bitmap.recycle()
     }
 
+    /**
+     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun onboardingWeekThemeAndRecreation() {
         check(InstrumentationRegistry.getInstrumentation().targetContext.packageName.endsWith(".smoke")) {
             "Run with -PemulatorSmoke=true so normal app settings are preserved"

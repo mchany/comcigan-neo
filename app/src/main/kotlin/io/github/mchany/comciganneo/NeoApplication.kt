@@ -18,6 +18,11 @@ class NeoApplication : Application() {
     val repository by lazy { AppRepository(this, BuildConfig.NEIS_API_KEY) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    /**
+     * 역할: 위젯 목록 팩토리 초기화 시 별도 작업을 하지 않는다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     override fun onCreate() {
         super.onCreate()
         DailyNotificationPublisher.createChannels(this)
@@ -38,6 +43,11 @@ class NeoApplication : Application() {
         }
     }
 
+    /**
+     * 역할: 저장된 알림 설정으로 시스템 예약을 다시 동기화한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     fun refreshNotificationSchedules() {
         scope.launch { DailyNotificationScheduler(this@NeoApplication).synchronize(repository.preferences.first()) }
     }

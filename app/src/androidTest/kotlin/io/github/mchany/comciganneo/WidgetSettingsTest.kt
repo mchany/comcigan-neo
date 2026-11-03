@@ -16,7 +16,17 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class WidgetSettingsTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    /**
+     * 역할: 화면에서 지정한 요소나 문구가 나타날 때까지 기다린다.
+     * 입력: matcher: SemanticsMatcher.
+     * 출력: 없음(Unit).
+     */
     private fun waitFor(matcher: SemanticsMatcher) { compose.waitUntil(30_000) { compose.onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty() } }
+    /**
+     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun palettePersistsAndWidgetTapsOpenCorrectTodayTab() = runBlocking<Unit> {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         seedWidgetData(context)

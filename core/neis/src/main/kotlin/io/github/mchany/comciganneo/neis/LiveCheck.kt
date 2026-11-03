@@ -4,6 +4,11 @@ import io.github.mchany.comciganneo.model.*
 import kotlinx.coroutines.runBlocking
 
 /** Explicit read-only probe. A keyless probe can validate one day, never a truncated week. */
+/**
+ * 역할: 독립 실행 도구의 진입점에서 작업을 시작한다.
+ * 입력: args: Array<String>.
+ * 출력: 없음(Unit).
+ */
 fun main(args: Array<String>) = runBlocking {
     val key = System.getenv("NEIS_API_KEY").orEmpty()
     val client = NeisClient(key, allowSample = key.isBlank())

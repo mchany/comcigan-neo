@@ -7,7 +7,17 @@ import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
 
 val SchoolZone: ZoneId = ZoneId.of("Asia/Seoul")
+/**
+ * 역할: 한국 시간대의 오늘 날짜를 반환한다.
+ * 입력: 없음.
+ * 출력: LocalDate 값.
+ */
 fun schoolToday(): LocalDate = LocalDate.now(SchoolZone)
+/**
+ * 역할: 지정한 주의 시작 날짜를 계산한다.
+ * 입력: date: LocalDate, offset: Int.
+ * 출력: LocalDate 값.
+ */
 fun weekStart(date: LocalDate = schoolToday(), offset: Int = 0): LocalDate =
     date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)).plusWeeks(offset.toLong())
 

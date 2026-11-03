@@ -21,7 +21,17 @@ data class ServiceCodes(
     val originalField: String,
 ) {
     val timetableRoute: String get() = searchRoute.substringBefore('?') + "?"
+    /**
+     * 역할: 학교 검색 API 경로를 구성한다.
+     * 입력: query: String.
+     * 출력: String 값.
+     */
     fun searchPath(query: String): String = searchRoute + URLEncoder.encode(query, "MS949")
+    /**
+     * 역할: 시간표 API 경로를 구성한다.
+     * 입력: schoolCode: Int, week: Int.
+     * 출력: String 값.
+     */
     fun timetablePath(schoolCode: Int, week: Int): String {
         require(week in 0..1)
         val token = "${requestPrefix}_${schoolCode}_0_${week + 1}"
@@ -30,7 +40,17 @@ data class ServiceCodes(
 }
 
 object ComciganParser {
+    /**
+     * 역할: 페이지에서 시간표 서비스 코드를 추출한다.
+     * 입력: page: String.
+     * 출력: ServiceCodes 값.
+     */
     fun serviceCodes(page: String): ServiceCodes {
+        /**
+         * 역할: 정규식에서 지정한 값을 추출한다.
+         * 입력: name: String, pattern: String.
+         * 출력: String 값.
+         */
         fun capture(name: String, pattern: String): String =
             Regex(pattern).find(page)?.groupValues?.get(1)
                 ?: throw StructureChanged("컴시간 페이지의 $name 형식이 변경됐어요.")
@@ -45,11 +65,21 @@ object ComciganParser {
         )
     }
 
+    /**
+     * 역할: 문자열을 JSON 객체로 분석한다.
+     * 입력: text: String.
+     * 출력: JsonObject 값.
+     */
     private fun objectFrom(text: String): JsonObject = try {
         val clean = text.trim('\u0000', '\r', '\n', ' ', '\t', '\uFEFF')
         Json.parseToJsonElement(clean).jsonObject
     } catch (e: Exception) { throw StructureChanged("시간표 응답을 읽을 수 없어요.", e) }
 
+    /**
+     * 역할: 학교 검색 응답을 학교 목록으로 변환한다.
+     * 입력: text: String.
+     * 출력: List<School> 값.
+     */
     fun schools(text: String): List<School> = try {
         val items = objectFrom(text)["학교검색"]?.jsonArray
             ?: throw StructureChanged("학교 검색 응답 형식이 변경됐어요.")
@@ -61,6 +91,11 @@ object ComciganParser {
     } catch (e: StructureChanged) { throw e }
       catch (e: Exception) { throw StructureChanged("학교 검색 응답 형식이 변경됐어요.", e) }
 
+    /**
+     * 역할: 시간표 응답을 수업 스냅샷으로 변환한다.
+     * 입력: text: String, codes: ServiceCodes, selection: ClassSelection, fetchedAt: Long.
+     * 출력: TimetableSnapshot 값.
+     */
     fun timetable(text: String, codes: ServiceCodes, selection: ClassSelection, fetchedAt: Long): TimetableSnapshot {
         try {
             val data = objectFrom(text)
@@ -83,20 +118,45 @@ object ComciganParser {
                     match.groupValues[1].toInt() to match.groupValues[2].padStart(5, '0')
                 }
             }?.toMap().orEmpty()
+            /**
+             * 역할: 배열에서 지정한 날짜의 행을 가져온다.
+             * 입력: array: JsonArray, day: Int.
+             * 출력: JsonArray? 값.
+             */
             fun row(array: JsonArray, day: Int) = array.getOrNull(day) as? JsonArray
+            /**
+             * 역할: 시간표 행에 실제로 등록된 교시 수를 계산한다.
+             * 입력: row: JsonArray?.
+             * 출력: Int 값.
+             */
             fun periodCount(row: JsonArray?): Int {
                 if (row == null || row.isEmpty()) return 0
                 val count = (row.firstOrNull() as? JsonPrimitive)?.intOrNull ?: (row.size - 1)
                 if (count !in 0..64) throw StructureChanged("교시 수 형식이 변경됐어요.")
                 return count
             }
+            /**
+             * 역할: 자료 배열에서 지정한 값을 읽는다.
+             * 입력: array: JsonArray?, period: Int.
+             * 출력: String 값.
+             */
             fun value(array: JsonArray?, period: Int): String =
                 (array?.getOrNull(period) as? JsonPrimitive)?.contentOrNull.orEmpty()
+            /**
+             * 역할: 컴시간 응답의 숫자 코드를 학년, 반, 교시 정보로 해독한다.
+             * 입력: value: String.
+             * 출력: Long 값.
+             */
             fun packed(value: String): Long = when (value) {
                 "", "null" -> 0
                 else -> value.removePrefix(">").toLongOrNull()
                     ?: throw StructureChanged("수업 코드 형식이 변경됐어요.")
             }
+            /**
+             * 역할: 원시 수업 문자열을 수업 모델로 변환한다.
+             * 입력: raw: String.
+             * 출력: Lesson? 값.
+             */
             fun lesson(raw: String): Lesson? {
                 val code = packed(raw)
                 if (code == 0L) return null

@@ -33,6 +33,11 @@ private val MealDateLabel = DateTimeFormatter.ofPattern("M월 d일 EEEE", Locale
 private val MealSyncLabel = DateTimeFormatter.ofPattern("M.d HH:mm", Locale.KOREAN)
 
 @Composable
+/**
+ * 역할: 선택한 날짜의 급식 자료를 표시한다.
+ * 입력: state: NeoState, viewModel: NeoViewModel.
+ * 출력: 없음(Unit).
+ */
 fun MealScreen(state: NeoState, viewModel: NeoViewModel) {
     val date = LocalDate.parse(state.meal.date)
     var type by rememberSaveable { mutableStateOf(MealType.LUNCH) }
@@ -95,6 +100,11 @@ fun MealScreen(state: NeoState, viewModel: NeoViewModel) {
 }
 
 @Composable
+/**
+ * 역할: 급식 항목의 상세 내용을 표시한다.
+ * 입력: meal: MealEntry.
+ * 출력: 없음(Unit).
+ */
 private fun MealDetails(meal: MealEntry) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -109,6 +119,11 @@ private fun MealDetails(meal: MealEntry) {
 }
 
 @Composable
+/**
+ * 역할: 제목과 여러 줄 내용을 확장 텍스트로 표시한다.
+ * 입력: title: String, text: String.
+ * 출력: 없음(Unit).
+ */
 private fun MealExpandedText(title: String, text: String) {
     var expanded by rememberSaveable(title) { mutableStateOf(false) }
     Column {
@@ -121,6 +136,11 @@ private fun MealExpandedText(title: String, text: String) {
 }
 
 @Composable
+/**
+ * 역할: 급식 화면의 정렬된 동작 버튼을 표시한다.
+ * 입력: onClick: () -> Unit, content: @Composable RowScope.() -> Unit.
+ * 출력: 없음(Unit).
+ */
 private fun AlignedMealAction(onClick: () -> Unit, content: @Composable RowScope.() -> Unit) {
     TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(vertical = 8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start,
@@ -129,12 +149,22 @@ private fun AlignedMealAction(onClick: () -> Unit, content: @Composable RowScope
 }
 
 @Composable
+/**
+ * 역할: 급식 자료의 마지막 조회 시각을 표시한다.
+ * 입력: snapshot: MealSnapshot.
+ * 출력: 없음(Unit).
+ */
 private fun MealFetchedAt(snapshot: MealSnapshot) {
     Text("마지막 급식 조회 ${Instant.ofEpochMilli(snapshot.fetchedAt).atZone(SchoolZone).format(MealSyncLabel)}",
         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
+/**
+ * 역할: 급식 연결과 관련 설정 화면을 표시한다.
+ * 입력: state: NeoState, viewModel: NeoViewModel.
+ * 출력: 없음(Unit).
+ */
 fun MealSettings(state: NeoState, viewModel: NeoViewModel) {
     ListItem(headlineContent = { Text("급식 학교") }, supportingContent = { Text(state.mealSchool?.name ?: "아직 연결하지 않았어요") },
         trailingContent = { TextButton(onClick = viewModel::openMealConnection) { Text("연결 관리") } })
@@ -148,6 +178,11 @@ fun MealSettings(state: NeoState, viewModel: NeoViewModel) {
 }
 
 @Composable
+/**
+ * 역할: 급식 학교 연결 대화상자를 표시한다.
+ * 입력: state: NeoState, viewModel: NeoViewModel.
+ * 출력: 없음(Unit).
+ */
 fun MealConnectionDialog(state: NeoState, viewModel: NeoViewModel) {
     ModalBottomSheet(onDismissRequest = viewModel::closeMealConnection) {
         MealSchoolPicker(state, viewModel)
@@ -155,6 +190,11 @@ fun MealConnectionDialog(state: NeoState, viewModel: NeoViewModel) {
 }
 
 @Composable
+/**
+ * 역할: 급식 학교 연결을 위한 초기 설정 화면을 표시한다.
+ * 입력: state: NeoState, viewModel: NeoViewModel.
+ * 출력: 없음(Unit).
+ */
 fun InitialMealSetupScreen(state: NeoState, viewModel: NeoViewModel) {
     LaunchedEffect(state.preferences.selection?.school?.code) {
         if (state.preferences.mealKeyConfigured) {
@@ -174,6 +214,11 @@ fun InitialMealSetupScreen(state: NeoState, viewModel: NeoViewModel) {
 }
 
 @Composable
+/**
+ * 역할: 급식 학교 검색 및 선택 화면을 표시한다.
+ * 입력: state: NeoState, viewModel: NeoViewModel, modifier: Modifier, initialSetup: Boolean.
+ * 출력: 없음(Unit).
+ */
 private fun MealSchoolPicker(state: NeoState, viewModel: NeoViewModel, modifier: Modifier = Modifier, initialSetup: Boolean = false) {
     var query by rememberSaveable(state.preferences.selection?.school?.code) { mutableStateOf(state.preferences.selection?.school?.name.orEmpty()) }
     var confirm by remember { mutableStateOf<NeisSchoolRef?>(null) }

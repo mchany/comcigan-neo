@@ -40,6 +40,11 @@ class BackgroundRestoreTest {
         "io.github.mchany.comciganneo.widgets.WidgetRefreshWorker",
     )
 
+    /**
+     * 역할: 이전 버전 앱 상태를 준비하고 업그레이드 시나리오를 구성한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun prepareUpgrade() = runBlocking {
         check(context.packageName.endsWith(".smoke"))
         seedWidgetData(context)
@@ -94,6 +99,11 @@ class BackgroundRestoreTest {
         })
     }
 
+    /**
+     * 역할: 이전 형식의 알림 발송 기록을 저장한다.
+     * 입력: repository: AppRepository, kind: NotificationKind, date: LocalDate.
+     * 출력: 없음(Unit).
+     */
     private suspend fun writeLegacyReceipt(repository: AppRepository, kind: NotificationKind, date: LocalDate) =
         suspendCoroutineUninterceptedOrReturn<Unit> { continuation ->
             // This path deliberately runs in the saved version-6 baseline APK, not the fixed app.

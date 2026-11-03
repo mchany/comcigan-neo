@@ -13,16 +13,16 @@ class DailyNotificationScheduler(private val context: Context) {
     private val alarms = context.getSystemService(AlarmManager::class.java)
 
     /**
-     * 기기에서 정확한 알람을 예약할 수 있는지 확인한다.
+     * 역할: Android 버전과 사용자 권한에 따라 정확한 알람 예약 가능 여부를 확인한다.
      * 입력: 생성 시 전달된 Android 컨텍스트와 기기 OS 상태.
-     * 출력: 정확한 알람 예약이 가능하면 true를 반환한다.
+     * 출력: Boolean 값.
      */
     fun canScheduleExactly() = Build.VERSION.SDK_INT < 31 || alarms.canScheduleExactAlarms()
 
     /**
-     * 알림 설정을 기준으로 알람 예약과 기존 알림 상태를 동기화한다.
+     * 역할: 사용자 설정과 게시 권한을 기준으로 일일 알람을 예약하거나 기존 작업을 취소한다.
      * 입력: 현재 앱의 알림 설정.
-     * 출력: 필요한 알람을 예약하거나 비활성 알림의 예약 및 게시물을 취소한다.
+     * 출력: 없음(Unit).
      */
     fun synchronize(preferences: AppPreferences) {
         for (kind in NotificationKind.entries) {
@@ -46,9 +46,9 @@ class DailyNotificationScheduler(private val context: Context) {
     }
 
     /**
-     * 알림 종류와 실행 시각을 담은 브로드캐스트 PendingIntent를 만든다.
+     * 역할: 날짜와 시각을 담아 알림 수신기로 전달할 PendingIntent를 만든다.
      * 입력: 알림 종류, 선택적 날짜 문자열, 분 단위 알림 시각.
-     * 출력: 알람 관리자에 등록할 PendingIntent를 반환한다.
+     * 출력: PendingIntent 값.
      */
     private fun pending(kind: NotificationKind, date: String = "", minutes: Int = -1): PendingIntent =
         PendingIntent.getBroadcast(context, kind.ordinal, Intent(context, DailyAlarmReceiver::class.java)

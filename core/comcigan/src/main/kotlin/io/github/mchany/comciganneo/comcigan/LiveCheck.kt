@@ -4,6 +4,11 @@ import io.github.mchany.comciganneo.model.ClassSelection
 import kotlinx.coroutines.runBlocking
 
 /** Opt-in network smoke check. Not part of offline unit tests. */
+/**
+ * 역할: 독립 실행 도구의 진입점에서 작업을 시작한다.
+ * 입력: args: Array<String>.
+ * 출력: 없음(Unit).
+ */
 fun main(args: Array<String>) = runBlocking {
     val query = args.firstOrNull() ?: "중일고등학교"
     val client = ComciganClient()

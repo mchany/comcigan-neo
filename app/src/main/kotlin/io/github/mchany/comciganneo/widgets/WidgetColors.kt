@@ -17,6 +17,11 @@ data class WidgetColors(val surface: Int, val cardSurface: Int, val ink: Int, va
     val accent: Int, val onAccent: Int, val container: Int, val onContainer: Int, val outline: Int,
     val bitmapScale: Float) {
     companion object {
+        /**
+         * 역할: 사용자 설정과 시스템 테마에서 위젯 색상 집합을 계산한다.
+         * 입력: context: Context, preferences: AppPreferences.
+         * 출력: WidgetColors 값.
+         */
         fun resolve(context: Context, preferences: AppPreferences): WidgetColors {
             val scheme = neoColorScheme(context, preferences)
             val scale = minOf(1.5f, context.resources.displayMetrics.density * 0.6f)
@@ -42,17 +47,42 @@ data class WidgetColors(val surface: Int, val cardSurface: Int, val ink: Int, va
                 if (dark) mix(tones[0], Color.BLACK, 0.5f) else tones[1], if (dark) tones[1] else tones[2],
                 if (dark) 0xff49454f.toInt() else 0xffcac4d0.toInt(), scale)
         }
+        /**
+         * 역할: 두 색상을 지정한 비율로 혼합한다.
+         * 입력: a: Int, b: Int, fraction: Float.
+         * 출력: Int 값.
+         */
         private fun mix(a: Int, b: Int, fraction: Float) = ColorUtils.blendARGB(a, b, fraction)
     }
 
+    /**
+     * 역할: 위젯 배경용 비트맵을 만든다.
+     * 입력: width: Int, height: Int, card: Boolean.
+     * 출력: Bitmap 값.
+     */
     fun background(width: Int, height: Int, card: Boolean = false): Bitmap = shape(width, height,
         if (card) cardSurface else surface, if (card) 16f else 24f, border = !card)
 
+    /**
+     * 역할: 위젯 알약형 장식용 비트맵을 만든다.
+     * 입력: width: Int, height: Int, filled: Boolean.
+     * 출력: Bitmap 값.
+     */
     fun pill(width: Int, height: Int, filled: Boolean = false): Bitmap = shape(width, height,
         if (filled) accent else container, 50f)
 
+    /**
+     * 역할: 위젯 선택 표시용 비트맵을 만든다.
+     * 입력: width: Int, height: Int.
+     * 출력: Bitmap 값.
+     */
     fun selection(width: Int, height: Int): Bitmap = shape(width, height, container, 12f)
 
+    /**
+     * 역할: 지정한 크기와 색상으로 둥근 사각형 비트맵을 그린다.
+     * 입력: width: Int, height: Int, fill: Int, radius: Float, border: Boolean.
+     * 출력: Bitmap 값.
+     */
     private fun shape(width: Int, height: Int, fill: Int, radius: Float, border: Boolean = false): Bitmap {
         val scale = minOf(bitmapScale, 600f / width.coerceAtLeast(1), 500f / height.coerceAtLeast(1))
         val w = (width.coerceAtLeast(24) * scale).toInt().coerceAtLeast(1)

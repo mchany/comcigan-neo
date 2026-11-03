@@ -12,6 +12,11 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class MealMigrationTest {
+    /**
+     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun upgradeFromBetaPreservesTimetablesAndCreatesMealCache() = runBlocking<Unit> {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         check(context.packageName.endsWith(".smoke"))
