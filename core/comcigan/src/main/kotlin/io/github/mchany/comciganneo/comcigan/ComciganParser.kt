@@ -30,9 +30,46 @@ data class ServiceCodes(
 }
 
 object ComciganParser {
+    private val obfuscatedScript = Regex(
+        """/\*\s*hour-obfuscated-v2\s*\*/\s*\(function\(a,k\)\{.*?\}\)\((\[\[.*?\]\]),\s*(\d+)\s*\);""",
+        RegexOption.DOT_MATCHES_ALL,
+    )
+
+    private fun readablePage(page: String): String {
+        if (!page.contains("hour-obfuscated-v2")) return page
+        val matches = obfuscatedScript.findAll(page).toList()
+        if (matches.isEmpty()) throw StructureChanged("컴시간 페이지 스크립트 형식이 변경됐어요.")
+        return obfuscatedScript.replace(page) { match ->
+            try {
+                val chunks = Json.parseToJsonElement(match.groupValues[1]).jsonArray
+                val key = match.groupValues[2].toInt()
+                buildString {
+                    for (chunk in chunks) {
+                        val parts = chunk.jsonArray
+                        if (parts[0].jsonPrimitive.int == 1) {
+                            append(parts[1].jsonPrimitive.content)
+                        } else {
+                            val encoded = parts[1].jsonPrimitive.content
+                            var offset = 0
+                            while (offset < encoded.length) {
+                                val end = (offset + 4).coerceAtMost(encoded.length)
+                                val value = encoded.substring(offset, end).toInt(16)
+                                append((value xor ((key + (offset / 4) * 13) and 255)).toChar())
+                                offset += 4
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                throw StructureChanged("컴시간 페이지 스크립트를 읽을 수 없어요.", e)
+            }
+        }
+    }
+
     fun serviceCodes(page: String): ServiceCodes {
+        val source = readablePage(page)
         fun capture(name: String, pattern: String): String =
-            Regex(pattern).find(page)?.groupValues?.get(1)
+            Regex(pattern).find(source)?.groupValues?.get(1)
                 ?: throw StructureChanged("컴시간 페이지의 $name 형식이 변경됐어요.")
         return ServiceCodes(
             capture("검색 경로", """\.(/\d+\?\d+l)"""),
