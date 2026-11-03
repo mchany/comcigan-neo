@@ -2,19 +2,15 @@
 
 Kotlin과 Jetpack Compose Material 3로 제작한 컴시간알리미 비공식 오픈소스 Android 클라이언트입니다.
 
-현재 배포 버전: **1.0.0 정식 — 초기 설정, 시간표·급식 알림, Material 3 홈 위젯**. Android 8.0(API 26) 이상에서 설치할 수 있습니다.
+현재 배포 버전: **1.0.1 — 컴시간 사이트의 난독화로 인한 시간표 파싱 오류 해결**. Android 8.0(API 26) 이상에서 설치할 수 있습니다.
 
-배포 APK: **버전 코드 7 · 약 1.79MB**. 같은 날 알림을 받은 뒤 수신 시각을 변경하면 알림이 누락되던 문제를 수정했습니다.
+배포 APK: **버전 코드 11 · 약 1.8MB**. 같은 날 알림을 받은 뒤 수신 시각을 변경하면 알림이 누락되던 문제를 수정했습니다.
 
-R8 코드 최적화와 리소스 축소로 설치 파일 용량을 기존 약 12.78MB에서 약 **86% 줄였습니다**. [용량 축소 및 백그라운드 업데이트 검증](docs/apk-size.md)을 참고하세요.
+[![APK 다운로드 · 1.0.1](https://img.shields.io/badge/APK_다운로드-1.0.1-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/download/v1.0.1/comcigan-neo-1.0.1.apk)
+[![릴리즈 노트 · 1.0.1](https://img.shields.io/badge/릴리즈_노트-1.0.1-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/tag/v1.0.1)
 
-[![APK 다운로드 · 1.0.0](https://img.shields.io/badge/APK_다운로드-1.0.0-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/download/v1.0.0/comcigan-neo-1.0.0.apk)
-[![릴리즈 노트 · 1.0.0](https://img.shields.io/badge/릴리즈_노트-1.0.0-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/tag/v1.0.0)
-
-배포용 서명을 적용한 APK이며, **나이스 인증키가 포함되어 별도 키 입력 없이 급식을 조회할 수 있습니다.**
-처음 설치하면 학교·학급 → 급식 학교 → 알림 설정 순서로 안내합니다.
-0.2.1-beta 및 0.1.0-beta와 동일한 배포 인증서로 서명했으므로 기존 앱을 삭제하지 않고 덮어 설치할 수 있으며, 설정과 데이터가 유지됩니다.
-APK의 SHA-256은 릴리즈에 첨부된 [SHA256SUMS.txt](https://github.com/mchany/comcigan-neo/releases/download/v1.0.0/SHA256SUMS.txt)에서 확인할 수 있습니다.
+0.2.1-beta, 0.1.0-beta, 1.0.0와 동일한 배포 인증서로 서명했으므로 기존 앱을 삭제하지 않고 덮어 설치할 수 있으며, 설정과 데이터가 유지됩니다.
+APK의 SHA-256은 릴리즈에 첨부된 [SHA256SUMS.txt](https://github.com/mchany/comcigan-neo/releases/download/v1.0.1/SHA256SUMS.txt)에서 확인할 수 있습니다.
 
 ## 구현한 기능
 
