@@ -9,6 +9,11 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 
 class DailyNotificationWorker(context: Context, parameters: WorkerParameters) : CoroutineWorker(context, parameters) {
+    /**
+     * 오늘의 시간표 또는 급식 자료를 확인해 알림을 발송한다.
+     * 입력: WorkManager가 전달한 알림 종류, 날짜, 설정 시각과 작업 실행 정보.
+     * 출력: 완료, 재시도 또는 실패 결과를 반환하며 해당 날짜 자료가 비어 있으면 발송 없이 완료한다.
+     */
     override suspend fun doWork(): Result {
         val kind = NotificationKind.entries.firstOrNull { it.name == inputData.getString("kind") } ?: return Result.failure()
         val date = schoolToday()
@@ -35,6 +40,13 @@ class DailyNotificationWorker(context: Context, parameters: WorkerParameters) : 
             val current = repository.preferences.first()
             if (schoolToday() != date || !isNotificationReady(current, kind) || current.notification(kind).minutes != minutes ||
                 current.selection != selection || (kind == NotificationKind.MEALS && current.mealSchool != school)) return Result.success()
+            val hasContent = when (kind) {
+                NotificationKind.TIMETABLE -> timetable?.slots?.any { it.date == date.toString() && it.current != null } == true
+                NotificationKind.MEALS -> meals?.forDate(date)?.any { entry -> entry.menu.any(String::isNotBlank) } == true
+            }
+            if ((kind == NotificationKind.TIMETABLE && timetable != null || kind == NotificationKind.MEALS && meals != null) && !hasContent) {
+                return Result.success()
+            }
             val text = when {
                 timetable != null -> timetableNotificationText(timetable, date, current.showTeachers, fallback)
                 meals != null -> mealNotificationText(meals, date, fallback)
@@ -49,6 +61,11 @@ class DailyNotificationWorker(context: Context, parameters: WorkerParameters) : 
           catch (_: Exception) { return if (runAttemptCount < 2 && schoolToday() == date) Result.retry() else Result.failure() }
     }
 
+    /**
+     * 제한 시간 안에 자료 조회를 실행하고 조회 오류를 값으로 처리한다.
+     * 입력: 실행할 일시 중단 자료 조회 함수.
+     * 출력: 조회 결과를 반환하고 시간 초과나 일반 오류가 나면 null을 반환한다.
+     */
     private suspend fun <T> fetch(block: suspend () -> T): T? = withTimeoutOrNull(45_000) {
         try { block() } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
     }
