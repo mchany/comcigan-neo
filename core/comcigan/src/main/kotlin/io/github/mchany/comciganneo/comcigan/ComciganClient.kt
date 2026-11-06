@@ -33,22 +33,26 @@ class ComciganClient {
                 cachedCodes = System.currentTimeMillis() to it
             }
     }
+    private suspend fun <T> withCodes(block: (ServiceCodes) -> T): T {
+        val initial = codes()
+        try { return block(initial) }
+        catch (e: StructureChanged) {
+            // Routes, response keys and field numbers can rotate while the app is running.
+            lock.withLock { if (cachedCodes?.second == initial) cachedCodes = null }
+            return block(codes())
+        }
+    }
     suspend fun searchSchools(query: String): List<School> = withContext(Dispatchers.IO) {
         require(query.trim().length >= 2) { "학교 이름을 두 글자 이상 입력해 주세요." }
-        val codes = codes()
-        ComciganParser.schools(get(codes.searchPath(query.trim()), Charsets.UTF_8))
+        withCodes { codes -> ComciganParser.schools(get(codes.searchPath(query.trim()), Charsets.UTF_8), codes) }
     }
     suspend fun fetch(selection: ClassSelection, week: Int): TimetableSnapshot = withContext(Dispatchers.IO) {
-        val codes = codes()
-        try {
+        withCodes { codes ->
             val snapshot = ComciganParser.timetable(get(codes.timetablePath(selection.school.code, week), Charsets.UTF_8),
                 codes, selection, System.currentTimeMillis())
             // Never display this week's data under a next-week heading.
             if (snapshot.weekStart != weekStart(offset = week).toString()) throw TimetableUnavailable()
             snapshot
-        } catch (e: StructureChanged) {
-            lock.withLock { cachedCodes = null }
-            throw e
         }
     }
 }
