@@ -19,12 +19,17 @@ data class ServiceCodes(
     val updatedField: String,
     val currentField: String,
     val originalField: String,
+    val responseKeyHex: String? = null,
+    val schoolCodeDivisor: Int? = null,
+    val schoolCodeOffset: Int = 2,
 ) {
     val timetableRoute: String get() = searchRoute.substringBefore('?') + "?"
-    fun searchPath(query: String): String = searchRoute + URLEncoder.encode(query, "MS949")
+    fun searchPath(query: String): String = searchRoute + URLEncoder.encode(query, "MS949") +
+        if (responseKeyHex != null) "_enc2" else ""
     fun timetablePath(schoolCode: Int, week: Int): String {
         require(week in 0..1)
-        val token = "${requestPrefix}_${schoolCode}_0_${week + 1}"
+        val token = "${requestPrefix}_${schoolCode}_0_${week + 1}" +
+            if (responseKeyHex != null) "_enc2" else ""
         return timetableRoute + Base64.getEncoder().encodeToString(token.toByteArray(Charsets.UTF_8))
     }
 }
@@ -71,6 +76,18 @@ object ComciganParser {
         fun capture(name: String, pattern: String): String =
             Regex(pattern).find(source)?.groupValues?.get(1)
                 ?: throw StructureChanged("컴시간 페이지의 $name 형식이 변경됐어요.")
+        val encrypted = source.contains("CryptoJS.AES.decrypt")
+        val responseKey = if (encrypted) capture("응답 복호화 키",
+            """var\s+key\s*=\s*CryptoJS\.enc\.Hex\.parse\(\s*['"]([0-9a-fA-F]{64})['"]\s*\)""") else null
+        val schoolIndex = if (encrypted) Regex(
+            """Math\.floor\(\s*학교명단\[i\]\[0\]\s*/\s*(\d+)\s*\)\s*\+\s*(\d+)"""
+        ).find(source) ?: throw StructureChanged("학교 코드 위치 형식이 변경됐어요.") else null
+        val schoolDivisor = schoolIndex?.groupValues?.get(1)?.toIntOrNull()
+        val schoolOffset = if (schoolIndex == null) 2 else schoolIndex.groupValues[2].toIntOrNull()
+            ?: throw StructureChanged("학교 코드 위치 형식이 변경됐어요.")
+        if (encrypted && (schoolDivisor == null || schoolDivisor <= 0 || schoolOffset !in 0..64)) {
+            throw StructureChanged("학교 코드 위치 형식이 변경됐어요.")
+        }
         return ServiceCodes(
             capture("검색 경로", """\.(/\d+\?\d+l)"""),
             capture("요청 코드", """sc_data\(\s*'(\d+)_"""),
@@ -79,20 +96,30 @@ object ComciganParser {
             "자료" + capture("갱신 시각", """=\s*H시간표\.자료(\d+)"""),
             "자료" + capture("현재 시간표", """일일자료\s*=\s*Q자료\(\s*자료\.자료(\d+)"""),
             "자료" + capture("원본 시간표", """원자료\s*=\s*Q자료\(\s*자료\.자료(\d+)"""),
+            responseKey, schoolDivisor, schoolOffset,
         )
     }
 
-    private fun objectFrom(text: String): JsonObject = try {
-        val clean = text.trim('\u0000', '\r', '\n', ' ', '\t', '\uFEFF')
+    private fun objectFrom(text: String, codes: ServiceCodes? = null): JsonObject = try {
+        val clean = ComciganResponseDecoder.decode(text, codes?.responseKeyHex)
         Json.parseToJsonElement(clean).jsonObject
+    } catch (e: StructureChanged) { throw e
     } catch (e: Exception) { throw StructureChanged("시간표 응답을 읽을 수 없어요.", e) }
 
-    fun schools(text: String): List<School> = try {
-        val items = objectFrom(text)["학교검색"]?.jsonArray
+    fun schools(text: String, codes: ServiceCodes? = null): List<School> = try {
+        val items = objectFrom(text, codes)["학교검색"]?.jsonArray
             ?: throw StructureChanged("학교 검색 응답 형식이 변경됐어요.")
         items.mapNotNull { item ->
             val row = item.jsonArray
-            val code = row.getOrNull(3)?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            val index = codes?.schoolCodeDivisor?.let { divisor ->
+                val selector = row.firstOrNull()?.jsonPrimitive?.longOrNull
+                    ?.takeIf { it >= 0 } ?: throw StructureChanged("학교 코드 위치를 읽을 수 없어요.")
+                val selected = selector / divisor + codes.schoolCodeOffset
+                if (selected < 0 || selected >= row.size) throw StructureChanged("학교 코드 위치를 읽을 수 없어요.")
+                selected.toInt()
+            } ?: 3
+            val code = row.getOrNull(index)?.jsonPrimitive?.intOrNull
+                ?: if (codes?.responseKeyHex != null) throw StructureChanged("학교 코드를 읽을 수 없어요.") else return@mapNotNull null
             if (code == 0) null else School(code, row[2].jsonPrimitive.content, row[1].jsonPrimitive.content)
         }.distinctBy { it.code }
     } catch (e: StructureChanged) { throw e }
@@ -100,7 +127,7 @@ object ComciganParser {
 
     fun timetable(text: String, codes: ServiceCodes, selection: ClassSelection, fetchedAt: Long): TimetableSnapshot {
         try {
-            val data = objectFrom(text)
+            val data = objectFrom(text, codes)
             if (data.isEmpty() || data["시작일"] == null) throw TimetableUnavailable()
             val start = LocalDate.parse(data.getValue("시작일").jsonPrimitive.content)
             val counts = data.getValue("학급수").jsonArray.drop(1).map { it.jsonPrimitive.int }
