@@ -2,15 +2,13 @@
 
 Kotlin과 Jetpack Compose Material 3로 제작한 컴시간알리미 비공식 오픈소스 Android 클라이언트입니다.
 
-현재 배포 버전: **1.0.1 — 컴시간 사이트의 난독화로 인한 시간표 파싱 오류 해결**. Android 8.0(API 26) 이상에서 설치할 수 있습니다.
+현재 배포 버전: **1.0.2 — 컴시간의 요청·응답 형식 변경으로 학교 검색과 시간표 조회가 불가능한 문제를 해결**. Android 8.0(API 26) 이상에서 설치할 수 있습니다.
 
-배포 APK: **버전 코드 11 · 약 1.8MB**. 같은 날 알림을 받은 뒤 수신 시각을 변경하면 알림이 누락되던 문제를 수정했습니다.
+[![APK 다운로드 · 1.0.2](https://img.shields.io/badge/APK_다운로드-1.0.2-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/download/v1.0.2/comcigan-neo-1.0.2.apk)
+[![릴리즈 노트 · 1.0.2](https://img.shields.io/badge/릴리즈_노트-1.0.2-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/tag/v1.0.2)
 
-[![APK 다운로드 · 1.0.1](https://img.shields.io/badge/APK_다운로드-1.0.1-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/download/v1.0.1/comcigan-neo-1.0.1.apk)
-[![릴리즈 노트 · 1.0.1](https://img.shields.io/badge/릴리즈_노트-1.0.1-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/tag/v1.0.1)
-
-0.2.1-beta, 0.1.0-beta, 1.0.0와 동일한 배포 인증서로 서명했으므로 기존 앱을 삭제하지 않고 덮어 설치할 수 있으며, 설정과 데이터가 유지됩니다.
-APK의 SHA-256은 릴리즈에 첨부된 [SHA256SUMS.txt](https://github.com/mchany/comcigan-neo/releases/download/v1.0.1/SHA256SUMS.txt)에서 확인할 수 있습니다.
+이전 릴리즈와 동일한 배포 인증서로 서명했으므로 기존 앱을 삭제하지 않고 덮어 설치할 수 있으며, 설정과 데이터가 유지됩니다.
+APK의 SHA-256은 릴리즈에 첨부된 [SHA256SUMS.txt](https://github.com/mchany/comcigan-neo/releases/download/v1.0.2/SHA256SUMS.txt)에서 확인할 수 있습니다.
 
 ## 구현한 기능
 
