@@ -22,83 +22,39 @@ data class ServiceCodes(
     val responseKeyHex: String? = null,
     val schoolCodeDivisor: Int? = null,
     val schoolCodeOffset: Int = 2,
+    val responseFormat: String = "enc2",
+    val encodedSchoolSearch: Boolean = false,
 ) {
     val timetableRoute: String get() = searchRoute.substringBefore('?') + "?"
-    fun searchPath(query: String): String = searchRoute + URLEncoder.encode(query, "MS949") +
-        if (responseKeyHex != null) "_enc2" else ""
+    fun searchPath(query: String): String {
+        if (encodedSchoolSearch) {
+            val token = searchRoute.substringAfter('?') + uriComponent(query) + "_$responseFormat"
+            return timetableRoute + uriComponent(Base64.getEncoder().encodeToString(token.toByteArray(Charsets.UTF_8)))
+        }
+        return searchRoute + URLEncoder.encode(query, "MS949") +
+            if (responseKeyHex != null) "_$responseFormat" else ""
+    }
     fun timetablePath(schoolCode: Int, week: Int): String {
         require(week in 0..1)
         val token = "${requestPrefix}_${schoolCode}_0_${week + 1}" +
-            if (responseKeyHex != null) "_enc2" else ""
+            if (responseKeyHex != null) "_$responseFormat" else ""
         return timetableRoute + Base64.getEncoder().encodeToString(token.toByteArray(Charsets.UTF_8))
+    }
+
+    // JavaScript encodeURIComponent uses UTF-8 and %20 for spaces, unlike form encoding.
+    private fun uriComponent(value: String): String = buildString {
+        val hex = "0123456789ABCDEF"
+        for (byte in value.toByteArray(Charsets.UTF_8)) {
+            val n = byte.toInt() and 255
+            val c = n.toChar()
+            if (c in 'A'..'Z' || c in 'a'..'z' || c in '0'..'9' || c in "-_.!~*'()") append(c)
+            else append('%').append(hex[n / 16]).append(hex[n % 16])
+        }
     }
 }
 
 object ComciganParser {
-    private val obfuscatedScript = Regex(
-        """/\*\s*hour-obfuscated-v2\s*\*/\s*\(function\(a,k\)\{.*?\}\)\((\[\[.*?\]\]),\s*(\d+)\s*\);""",
-        RegexOption.DOT_MATCHES_ALL,
-    )
-
-    private fun readablePage(page: String): String {
-        if (!page.contains("hour-obfuscated-v2")) return page
-        val matches = obfuscatedScript.findAll(page).toList()
-        if (matches.isEmpty()) throw StructureChanged("컴시간 페이지 스크립트 형식이 변경됐어요.")
-        return obfuscatedScript.replace(page) { match ->
-            try {
-                val chunks = Json.parseToJsonElement(match.groupValues[1]).jsonArray
-                val key = match.groupValues[2].toInt()
-                buildString {
-                    for (chunk in chunks) {
-                        val parts = chunk.jsonArray
-                        if (parts[0].jsonPrimitive.int == 1) {
-                            append(parts[1].jsonPrimitive.content)
-                        } else {
-                            val encoded = parts[1].jsonPrimitive.content
-                            var offset = 0
-                            while (offset < encoded.length) {
-                                val end = (offset + 4).coerceAtMost(encoded.length)
-                                val value = encoded.substring(offset, end).toInt(16)
-                                append((value xor ((key + (offset / 4) * 13) and 255)).toChar())
-                                offset += 4
-                            }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                throw StructureChanged("컴시간 페이지 스크립트를 읽을 수 없어요.", e)
-            }
-        }
-    }
-
-    fun serviceCodes(page: String): ServiceCodes {
-        val source = readablePage(page)
-        fun capture(name: String, pattern: String): String =
-            Regex(pattern).find(source)?.groupValues?.get(1)
-                ?: throw StructureChanged("컴시간 페이지의 $name 형식이 변경됐어요.")
-        val encrypted = source.contains("CryptoJS.AES.decrypt")
-        val responseKey = if (encrypted) capture("응답 복호화 키",
-            """var\s+key\s*=\s*CryptoJS\.enc\.Hex\.parse\(\s*['"]([0-9a-fA-F]{64})['"]\s*\)""") else null
-        val schoolIndex = if (encrypted) Regex(
-            """Math\.floor\(\s*학교명단\[i\]\[0\]\s*/\s*(\d+)\s*\)\s*\+\s*(\d+)"""
-        ).find(source) ?: throw StructureChanged("학교 코드 위치 형식이 변경됐어요.") else null
-        val schoolDivisor = schoolIndex?.groupValues?.get(1)?.toIntOrNull()
-        val schoolOffset = if (schoolIndex == null) 2 else schoolIndex.groupValues[2].toIntOrNull()
-            ?: throw StructureChanged("학교 코드 위치 형식이 변경됐어요.")
-        if (encrypted && (schoolDivisor == null || schoolDivisor <= 0 || schoolOffset !in 0..64)) {
-            throw StructureChanged("학교 코드 위치 형식이 변경됐어요.")
-        }
-        return ServiceCodes(
-            capture("검색 경로", """\.(/\d+\?\d+l)"""),
-            capture("요청 코드", """sc_data\(\s*'(\d+)_"""),
-            "자료" + capture("교사", """성명\s*=\s*(?:Q성명\(\s*)?자료\.자료(\d+)"""),
-            "자료" + capture("과목", """자료\.자료(\d+)\[sb\]"""),
-            "자료" + capture("갱신 시각", """=\s*H시간표\.자료(\d+)"""),
-            "자료" + capture("현재 시간표", """일일자료\s*=\s*Q자료\(\s*자료\.자료(\d+)"""),
-            "자료" + capture("원본 시간표", """원자료\s*=\s*Q자료\(\s*자료\.자료(\d+)"""),
-            responseKey, schoolDivisor, schoolOffset,
-        )
-    }
+    fun serviceCodes(page: String): ServiceCodes = ComciganServicePage.codes(page)
 
     private fun objectFrom(text: String, codes: ServiceCodes? = null): JsonObject = try {
         val clean = ComciganResponseDecoder.decode(text, codes?.responseKeyHex)

@@ -13,7 +13,7 @@ import javax.crypto.spec.SecretKeySpec
 internal object ComciganResponseDecoder {
     fun decode(text: String, keyHex: String?): String {
         val clean = text.trim('\u0000', '\r', '\n', ' ', '\t', '\uFEFF')
-        val encrypted = clean.startsWith("enc1:") || clean.startsWith("enc2:")
+        val encrypted = clean.startsWith("enc1:") || clean.startsWith("enc2:") || clean.startsWith("enc5:")
         if (!encrypted) {
             if (keyHex != null) throw StructureChanged("암호화된 시간표 응답을 받지 못했어요.")
             return clean
@@ -24,7 +24,7 @@ internal object ComciganResponseDecoder {
             require(parts.size == 4)
             val key = hex(keyHex)
             val binary = parts.drop(1).map { value ->
-                if (parts[0] == "enc2") {
+                if (parts[0] == "enc2" || parts[0] == "enc5") {
                     require(value.isNotEmpty())
                     Base64.getDecoder().decode(value).also {
                         require(Base64.getEncoder().encodeToString(it) == value)
