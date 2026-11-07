@@ -156,6 +156,24 @@ Ktor 런타임이나 JitPack 의존성을 추가하지 않고 기존 환경에 �
 실서버 검증과 기기 UI 검증 결과는 [검증 기록](docs/verification.md)에 구분해 기록합니다.
 전체 제품 방향은 [앱 구상안](docs/android-app-proposal.md)을 참고하세요.
 
+## Parser Health
+
+컴시간neo는 컴시간의 비공식 API 변경으로 인한 조회 장애를 조기에 감지하기 위해 **GitHub Actions 기반의 파서 상태 자동 검증**을 운영합니다.
+
+매일 **18:00(KST)** 실제 컴시간 서버에 연결하여 학교 검색과 이번 주·다음 주 시간표 조회를 검사합니다. 검증에는 앱에서 사용하는 Kotlin 파서를 그대로 사용하며, 결과는 README 상단의 `Parser Health` 배지에 반영됩니다.
+
+| 상태 | 의미 |
+| --- | --- |
+| 🟢 `passing` | 마지막 검사에서 파서가 정상 작동함 |
+| 🔴 `failing` | 마지막 검사에서 오류가 발생함 |
+| ⚪ `no status` | 아직 검사 결과가 없거나 확인할 수 없음 |
+
+다음 주 시간표가 아직 게시되지 않은 경우는 정상적인 미게시 상태로 처리합니다.
+
+**배지는 마지막 GitHub Actions 실행 결과를 나타내며, 실시간 서비스 상태를 보장하지 않습니다.** 네트워크 장애나 CI 환경 문제로도 검사가 실패할 수 있습니다.
+
+검사 기록과 오류 로그는 [Parser Health Workflow](https://github.com/mchany/comcigan-neo/actions/workflows/parser-health.yml)에서 확인할 수 있습니다.
+
 ## 기여
 
 빌드·테스트 명령과 [기여 안내](CONTRIBUTING.md)를 확인해 주세요.
