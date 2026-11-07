@@ -6,7 +6,7 @@
 
 Kotlin과 Jetpack Compose Material 3로 제작한 컴시간알리미 비공식 오픈소스 Android 클라이언트입니다.
 
-현재 배포 버전: **1.0.3 — 시간의 추가적인 요청·응답 형식 변경으로 학교 검색과 시간표 조회가 다시 불가능해진 문제를 해결**. Android 8.0(API 26) 이상에서 설치할 수 있습니다.
+현재 배포 버전: **1.0.3 — 컴시간의 추가적인 요청·응답 형식 변경으로 학교 검색과 시간표 조회가 다시 불가능해진 문제를 해결**. Android 8.0(API 26) 이상에서 설치할 수 있습니다.
 
 [![APK 다운로드 · 1.0.3](https://img.shields.io/badge/APK_다운로드-1.0.3-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/download/v1.0.3/comcigan-neo-1.0.3.apk)
 [![릴리즈 노트 · 1.0.3](https://img.shields.io/badge/릴리즈_노트-1.0.3-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/tag/v1.0.3)
