@@ -1,6 +1,6 @@
 # 컴시간neo
 
-[![Parser Health](https://github.com/mchany/comcigan-neo/actions/workflows/parser-health.yml/badge.svg)](https://github.com/mchany/comcigan-neo/actions/workflows/parser-health.yml)
+[![Parser Health](https://img.shields.io/github/actions/workflow/status/mchany/comcigan-neo/parser-health.yml?branch=main&style=flat-square&label=Parser%20Health&logo=github&logoColor=white)](https://github.com/mchany/comcigan-neo/actions/workflows/parser-health.yml)
 
 Kotlin과 Jetpack Compose Material 3로 제작한 컴시간알리미 비공식 오픈소스 Android 클라이언트입니다.
 
@@ -149,13 +149,6 @@ API의 수정일자는 포털 연계 일자이므로 앱에는 별도로 마지�
 급식 클라이언트의 API 구조·필드 매핑은 MIT 라이선스의 [kimcore/neis.kt](https://github.com/kimcore/neis.kt)를 참고했습니다.
 Ktor 런타임이나 JitPack 의존성을 추가하지 않고 기존 환경에 맞게 구현했습니다.
 
-## 검증과 제약
-
-파서 회귀 테스트는 합성 데이터를 사용해 한글 인코딩, 서비스 페이지 변경, 세 자리 교사 코드,
-변경 전후 방향, 빈 교시 보존, 주차 경계를 검증합니다.
-실서버 검증과 기기 UI 검증 결과는 [검증 기록](docs/verification.md)에 구분해 기록합니다.
-전체 제품 방향은 [앱 구상안](docs/android-app-proposal.md)을 참고하세요.
-
 ## Parser Health
 
 컴시간neo는 컴시간의 비공식 API 변경으로 인한 조회 장애를 조기에 감지하기 위해 **GitHub Actions 기반의 파서 상태 자동 검증**을 운영합니다.
@@ -173,6 +166,13 @@ Ktor 런타임이나 JitPack 의존성을 추가하지 않고 기존 환경에 �
 **배지는 마지막 GitHub Actions 실행 결과를 나타내며, 실시간 서비스 상태를 보장하지 않습니다.** 네트워크 장애나 CI 환경 문제로도 검사가 실패할 수 있습니다.
 
 검사 기록과 오류 로그는 [Parser Health Workflow](https://github.com/mchany/comcigan-neo/actions/workflows/parser-health.yml)에서 확인할 수 있습니다.
+
+## 검증과 제약
+
+파서 회귀 테스트는 합성 데이터를 사용해 한글 인코딩, 서비스 페이지 변경, 세 자리 교사 코드,
+변경 전후 방향, 빈 교시 보존, 주차 경계를 검증합니다.
+실서버 검증과 기기 UI 검증 결과는 [검증 기록](docs/verification.md)에 구분해 기록합니다.
+전체 제품 방향은 [앱 구상안](docs/android-app-proposal.md)을 참고하세요.
 
 ## 기여
 
