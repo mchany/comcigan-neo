@@ -11,6 +11,21 @@ import java.util.Base64
 class StructureChanged(message: String, cause: Throwable? = null) : Exception(message, cause)
 class TimetableUnavailable : Exception("아직 게시된 시간표가 없어요.")
 
+/** Page-issued request credential. Deliberately redacted from ServiceCodes and diagnostic strings. */
+class HourRequestToken private constructor(private val value: String) {
+    internal fun headerValue(): String = value
+    override fun toString(): String = "HourRequestToken([redacted])"
+
+    companion object {
+        internal fun parse(value: String): HourRequestToken {
+            if (!Regex("[0-9a-fA-F]{1,4096}").matches(value)) {
+                throw StructureChanged("컴시간 페이지의 요청 토큰 형식이 변경됐어요.")
+            }
+            return HourRequestToken(value)
+        }
+    }
+}
+
 data class ServiceCodes(
     val searchRoute: String,
     val requestPrefix: String,
@@ -24,6 +39,7 @@ data class ServiceCodes(
     val schoolCodeOffset: Int = 2,
     val responseFormat: String = "enc2",
     val encodedSchoolSearch: Boolean = false,
+    val requestToken: HourRequestToken? = null,
 ) {
     val timetableRoute: String get() = searchRoute.substringBefore('?') + "?"
     fun searchPath(query: String): String {
@@ -67,6 +83,10 @@ object ComciganParser {
             ?: throw StructureChanged("학교 검색 응답 형식이 변경됐어요.")
         items.mapNotNull { item ->
             val row = item.jsonArray
+            // This footer is not a school. Its selector would otherwise point at the message in row[2].
+            if (row.size == 4 && row[0].jsonPrimitive.longOrNull == 0L && row[3].jsonPrimitive.intOrNull == 0) {
+                return@mapNotNull null
+            }
             val index = codes?.schoolCodeDivisor?.let { divisor ->
                 val selector = row.firstOrNull()?.jsonPrimitive?.longOrNull
                     ?.takeIf { it >= 0 } ?: throw StructureChanged("학교 코드 위치를 읽을 수 없어요.")

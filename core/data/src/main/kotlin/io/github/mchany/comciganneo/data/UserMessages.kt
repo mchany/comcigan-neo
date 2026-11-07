@@ -2,6 +2,8 @@ package io.github.mchany.comciganneo.data
 
 import io.github.mchany.comciganneo.comcigan.StructureChanged
 import io.github.mchany.comciganneo.comcigan.TimetableUnavailable
+import io.github.mchany.comciganneo.comcigan.ComciganRequestRejected
+import io.github.mchany.comciganneo.comcigan.ComciganRateLimited
 import io.github.mchany.comciganneo.neis.*
 import java.io.IOException
 
@@ -19,6 +21,8 @@ fun mealUserMessage(error: Throwable): String = when (error) {
 }
 
 fun userMessage(error: Throwable): String = when (error) {
+    is ComciganRequestRejected -> "자료 조회 요청이 거부됐어요. 잠시 후 다시 시도해 주세요."
+    is ComciganRateLimited -> "요청이 많아 잠시 조회할 수 없어요. 잠시 후 다시 시도해 주세요."
     is TimetableUnavailable -> "아직 게시된 시간표가 없어요. 나중에 다시 확인해 주세요."
     is StructureChanged -> "시간표 형식이 바뀌었거나 자료를 읽을 수 없어요. 앱 업데이트를 확인해 주세요."
     is IOException -> "연결하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요."

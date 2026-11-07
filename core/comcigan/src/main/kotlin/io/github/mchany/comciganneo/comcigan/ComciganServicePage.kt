@@ -70,6 +70,23 @@ internal object ComciganServicePage {
         return result
     }
 
+    private fun requestToken(source: String, school: String, timetable: String): HourRequestToken? {
+        val headerName = Regex("""['"]X-Hour-Token['"]\s*:""")
+        val sections = listOf(school, timetable)
+        if (sections.none { headerName.containsMatchIn(it) }) return null
+        val reference = Regex(
+            """headers\s*:\s*\{[^{}]*?['"]X-Hour-Token['"]\s*:\s*window\.__HourRequestToken\s*\|\|\s*(['"])\1\s*(?=[,\}])"""
+        )
+        if (sections.any { headerName.findAll(it).count() != 1 || !reference.containsMatchIn(it) }) {
+            throw StructureChanged("컴시간 페이지의 요청 토큰 헤더 형식이 변경됐어요.")
+        }
+        val literals = Regex("""\bwindow\.__HourRequestToken\s*=\s*(['"])([0-9a-fA-F]+)\1\s*;""")
+            .findAll(source).map { it.groupValues[2] }.distinct().toList()
+        val value = literals.singleOrNull()
+            ?: throw StructureChanged("컴시간 페이지의 요청 토큰을 읽을 수 없어요.")
+        return HourRequestToken.parse(value)
+    }
+
     fun codes(page: String): ServiceCodes {
         val source = readablePage(page)
         fun capture(name: String, pattern: String, text: String = source): String =
@@ -79,6 +96,7 @@ internal object ComciganServicePage {
             """function\s+$name\s*\([^)]*\)\s*\{(.*?)\}\s*\)\s*;\s*\}""", RegexOption.DOT_MATCHES_ALL,
         ).find(source)?.groupValues?.get(1) ?: throw StructureChanged("컴시간 페이지의 요청 함수 형식이 변경됐어요.")
         val encodedSearch = source.contains("function QAjaxSchool")
+        var token: HourRequestToken? = null
         val searchRoute = if (encodedSearch) {
             val school = ajax("QAjaxSchool")
             val endpoint = capture("검색 경로", """url\s*:\s*['"]\.(/\d+\?)['"]""", school)
@@ -89,6 +107,7 @@ internal object ComciganServicePage {
                 !Regex("""['"]_enc5['"]""").containsMatchIn(timetable)) {
                 throw StructureChanged("시간표 요청 형식이 변경됐어요.")
             }
+            token = requestToken(source, school, timetable)
             endpoint + prefix
         } else capture("검색 경로", """\.(/\d+\?\d+l)""")
         val encrypted = source.contains("CryptoJS.AES.decrypt")
@@ -111,7 +130,7 @@ internal object ComciganServicePage {
             "자료" + capture("갱신 시각", """=\s*H시간표\.자료(\d+)"""),
             "자료" + capture("현재 시간표", """일일자료\s*=\s*Q자료\(\s*자료\.자료(\d+)"""),
             "자료" + capture("원본 시간표", """원자료\s*=\s*Q자료\(\s*자료\.자료(\d+)"""),
-            responseKey, divisor, offset, if (encodedSearch) "enc5" else "enc2", encodedSearch,
+            responseKey, divisor, offset, if (encodedSearch) "enc5" else "enc2", encodedSearch, token,
         )
     }
 }
