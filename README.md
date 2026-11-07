@@ -1,5 +1,7 @@
 # 컴시간neo
 
+[![컴시간 파서 상태](https://github.com/mchany/comcigan-neo/actions/workflows/parser-health.yml/badge.svg?branch=main)](https://github.com/mchany/comcigan-neo/actions/workflows/parser-health.yml)
+
 Kotlin과 Jetpack Compose Material 3로 제작한 컴시간알리미 비공식 오픈소스 Android 클라이언트입니다.
 
 현재 배포 버전: **1.0.2 — 컴시간의 요청·응답 형식 변경으로 학교 검색과 시간표 조회가 불가능한 문제를 해결**. Android 8.0(API 26) 이상에서 설치할 수 있습니다.
