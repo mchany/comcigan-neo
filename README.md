@@ -1,6 +1,6 @@
 # 컴시간neo
 
-[![컴시간 파서 상태](https://github.com/mchany/comcigan-neo/actions/workflows/parser-health.yml/badge.svg?branch=main)](https://github.com/mchany/comcigan-neo/actions/workflows/parser-health.yml)
+[![Parser Health](https://github.com/mchany/comcigan-neo/actions/workflows/parser-health.yml/badge.svg)](https://github.com/mchany/comcigan-neo/actions/workflows/parser-health.yml)
 
 Kotlin과 Jetpack Compose Material 3로 제작한 컴시간알리미 비공식 오픈소스 Android 클라이언트입니다.
 
