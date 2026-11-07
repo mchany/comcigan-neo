@@ -1,9 +1,6 @@
 name: Parser Health
 
-on:
-  schedule:
-    - cron: '7 0,6,12,18 * * *'
-      timezone: 'Asia/Seoul'
+on: 
   workflow_dispatch:
 
 permissions:
