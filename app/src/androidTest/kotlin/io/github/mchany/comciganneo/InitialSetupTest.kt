@@ -18,10 +18,20 @@ import org.junit.runner.RunWith
 class InitialSetupTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
+    /**
+     * 역할: 화면에서 지정한 요소나 문구가 나타날 때까지 기다린다.
+     * 입력: text: String.
+     * 출력: 없음(Unit).
+     */
     private fun waitFor(text: String) {
         compose.waitUntil(20_000) { compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() }
     }
 
+    /**
+     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun freshSetupResumesAndCanBeCompletedLater() = runBlocking<Unit> {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         check(context.packageName.endsWith(".smoke"))

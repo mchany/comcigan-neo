@@ -30,9 +30,19 @@ import java.time.ZonedDateTime
 @RunWith(AndroidJUnit4::class)
 class NotificationUiTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    /**
+     * 역할: 화면에서 지정한 요소나 문구가 나타날 때까지 기다린다.
+     * 입력: matcher: SemanticsMatcher.
+     * 출력: 없음(Unit).
+     */
     private fun waitFor(matcher: SemanticsMatcher) {
         compose.waitUntil(30_000) { compose.onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty() }
     }
+    /**
+     * 역할: 조건이 참이 될 때까지 제한 시간 동안 반복 확인한다.
+     * 입력: check: () -> Boolean.
+     * 출력: 없음(Unit).
+     */
     private fun eventually(check: () -> Boolean) {
         val deadline = SystemClock.elapsedRealtime() + 45_000
         while (!check()) {
@@ -41,6 +51,11 @@ class NotificationUiTest {
         }
     }
 
+    /**
+     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun permissionTimesBackgroundDeliveryAndTapDestinations() = runBlocking<Unit> {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

@@ -23,6 +23,11 @@ class ComciganClient internal constructor(
         .followRedirects(false).build())
     private val lock = Mutex()
     private var cachedCodes: Pair<Long, ServiceCodes>? = null
+    /**
+     * 역할: 지정한 경로의 네트워크 응답을 조회한다.
+     * 입력: path: String, charset: Charset, 선택적 요청 토큰 token: HourRequestToken?.
+     * 출력: String 값.
+     */
     private fun get(path: String, charset: Charset, token: HourRequestToken? = null): String {
         val request = Request.Builder().url("$baseUrl$path")
             .header("User-Agent", "Mozilla/5.0 ComciganNeo/0.1 (Android)")
@@ -36,6 +41,11 @@ class ComciganClient internal constructor(
             bytes.toString(charset)
         }
     }
+    /**
+     * 역할: 서버 서비스 코드를 조회하거나 캐시된 코드를 반환한다.
+     * 입력: 없음.
+     * 출력: ServiceCodes 값.
+     */
     private suspend fun codes(): ServiceCodes = lock.withLock {
         cachedCodes?.takeIf { System.currentTimeMillis() - it.first < 3_600_000 }?.second
             ?: ComciganParser.serviceCodes(get("/st", Charset.forName("MS949"))).also {
@@ -55,10 +65,20 @@ class ComciganClient internal constructor(
         }
         error("Unreachable retry state")
     }
+    /**
+     * 역할: 검색어에 맞는 학교 목록을 조회한다.
+     * 입력: query: String.
+     * 출력: List<School> 값.
+     */
     suspend fun searchSchools(query: String): List<School> = withContext(Dispatchers.IO) {
         require(query.trim().length >= 2) { "학교 이름을 두 글자 이상 입력해 주세요." }
         withCodes { codes -> ComciganParser.schools(get(codes.searchPath(query.trim()), Charsets.UTF_8, codes.requestToken), codes) }
     }
+    /**
+     * 역할: 제한 시간 안에 외부 자료를 조회한다.
+     * 입력: selection: ClassSelection, week: Int.
+     * 출력: TimetableSnapshot 값.
+     */
     suspend fun fetch(selection: ClassSelection, week: Int): TimetableSnapshot = withContext(Dispatchers.IO) {
         require(week in 0..1)
         withCodes { codes ->

@@ -38,6 +38,11 @@ private val DayLabel = DateTimeFormatter.ofPattern("M월 d일 EEEE", Locale.KORE
 private val ShortDay = DateTimeFormatter.ofPattern("M.d", Locale.KOREAN)
 
 @Composable
+/**
+ * 역할: 오늘 시간표와 다음 수업 정보를 표시한다.
+ * 입력: state: NeoState, now: ZonedDateTime, refresh: () -> Unit, onLesson: (LessonSlot) -> Unit.
+ * 출력: 없음(Unit).
+ */
 internal fun TodayScreen(state: NeoState, now: ZonedDateTime, refresh: () -> Unit, onLesson: (LessonSlot) -> Unit) {
     val today = now.toLocalDate()
     val lessons = state.snapshot?.slots?.filter { it.date == today.toString() }?.sortedBy { it.period }.orEmpty()
@@ -82,6 +87,11 @@ internal fun TodayScreen(state: NeoState, now: ZonedDateTime, refresh: () -> Uni
 }
 
 @Composable
+/**
+ * 역할: 다음 수업 안내 카드를 표시한다.
+ * 입력: next: LessonSlot?, guidance: String, compact: Boolean.
+ * 출력: 없음(Unit).
+ */
 private fun NextLessonCard(next: LessonSlot?, guidance: String, compact: Boolean) {
     Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer,
         modifier = Modifier.fillMaxWidth().testTag("next-lesson-card")) {
@@ -103,6 +113,11 @@ private fun NextLessonCard(next: LessonSlot?, guidance: String, compact: Boolean
 }
 
 @Composable
+/**
+ * 역할: 수업 한 건의 행을 표시한다.
+ * 입력: slot: LessonSlot, showTeacher: Boolean, rowHeight: Dp, onClick: (LessonSlot) -> Unit.
+ * 출력: 없음(Unit).
+ */
 private fun LessonRow(slot: LessonSlot, showTeacher: Boolean, rowHeight: Dp, onClick: (LessonSlot) -> Unit) {
     val scale = LocalDensity.current.fontScale
     val size = minOf(16f, ((rowHeight.value - 6f) / (1.25f * scale))).coerceAtLeast(6f)
@@ -129,6 +144,11 @@ private fun LessonRow(slot: LessonSlot, showTeacher: Boolean, rowHeight: Dp, onC
 }
 
 @Composable
+/**
+ * 역할: 주간 시간표 화면을 표시한다.
+ * 입력: state: NeoState, onWeek: (Int) -> Unit, refresh: () -> Unit, onLesson: (LessonSlot) -> Unit.
+ * 출력: 없음(Unit).
+ */
 internal fun WeekScreen(state: NeoState, onWeek: (Int) -> Unit, refresh: () -> Unit, onLesson: (LessonSlot) -> Unit) {
     var listView by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -160,6 +180,11 @@ internal fun WeekScreen(state: NeoState, onWeek: (Int) -> Unit, refresh: () -> U
 }
 
 @Composable
+/**
+ * 역할: 주간 시간표 격자와 수업 항목을 표시한다.
+ * 입력: snapshot: TimetableSnapshot, showTeachers: Boolean, modifier: Modifier, onLesson: (LessonSlot) -> Unit.
+ * 출력: 없음(Unit).
+ */
 private fun WeekGrid(snapshot: TimetableSnapshot, showTeachers: Boolean, modifier: Modifier, onLesson: (LessonSlot) -> Unit) {
     val start = LocalDate.parse(snapshot.weekStart)
     val days = (0..4).map { start.plusDays(it.toLong()) }
@@ -217,6 +242,11 @@ private fun WeekGrid(snapshot: TimetableSnapshot, showTeachers: Boolean, modifie
 }
 
 @Composable
+/**
+ * 역할: 시간표 오류 안내와 다시 시도 동작을 표시한다.
+ * 입력: message: String, retry: () -> Unit.
+ * 출력: 없음(Unit).
+ */
 private fun TimetableError(message: String, retry: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -229,6 +259,11 @@ private fun TimetableError(message: String, retry: () -> Unit) {
 }
 
 @Composable
+/**
+ * 역할: 시간표 자료의 동기화 상태를 간결하게 표시한다.
+ * 입력: snapshot: TimetableSnapshot.
+ * 출력: 없음(Unit).
+ */
 private fun CompactSyncLabel(snapshot: TimetableSnapshot) {
     val time = Instant.ofEpochMilli(snapshot.fetchedAt).atZone(SchoolZone).format(DateTimeFormatter.ofPattern("M.d HH:mm"))
     Text("마지막 조회 $time", style = MaterialTheme.typography.labelSmall,

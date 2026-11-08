@@ -13,6 +13,11 @@ import java.util.concurrent.TimeUnit
 
 /** Alarms only enqueue durable work; network access never runs inside a broadcast. */
 class DailyAlarmReceiver : BroadcastReceiver() {
+    /**
+     * 역할: 알람 및 시스템 변경 브로드캐스트를 확인하고 조건에 맞는 WorkManager 알림 작업을 등록한다.
+     * 입력: Android 컨텍스트와 시스템 또는 앱 알람 인텐트.
+     * 출력: 없음(Unit).
+     */
     override fun onReceive(context: Context, intent: Intent) {
         val requestedKind = NotificationKind.entries.firstOrNull { intent.action == "${context.packageName}.daily.${it.key}" }
         if (requestedKind == null && intent.action !in setOf(Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED,

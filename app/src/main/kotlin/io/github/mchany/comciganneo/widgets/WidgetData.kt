@@ -14,6 +14,11 @@ data class WidgetData(val preferences: AppPreferences, val now: ZonedDateTime,
     val focus = widgetFocus(lessons, now.toLocalTime())
     val mealSchool get() = preferences.mealSchool
     companion object {
+        /**
+         * 역할: 위젯 렌더링에 필요한 저장 설정과 시간표 및 급식 자료를 읽는다.
+         * 입력: context: Context.
+         * 출력: WidgetData 값.
+         */
         suspend fun load(context: Context): WidgetData {
             val repository = (context.applicationContext as NeoApplication).repository
             val preferences = repository.preferences.first()

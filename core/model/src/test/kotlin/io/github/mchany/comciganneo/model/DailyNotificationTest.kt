@@ -8,6 +8,11 @@ class DailyNotificationTest {
     private val today = LocalDate.of(2026, 10, 28)
     private val selection = ClassSelection(School(1, "검증고", "대전"), 2, 1)
 
+    /**
+     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun deliveredTimesRemainIndependentAndOldDaysArePruned() {
         val morning = notificationDeliverySlot(today, 450)
         val evening = notificationDeliverySlot(today, 23 * 60)
@@ -20,6 +25,11 @@ class DailyNotificationTest {
         assertEquals(setOf(notificationDeliverySlot(today.plusDays(1), 450)), recordNotificationDelivery(second, today.plusDays(1), 450))
     }
 
+    /**
+     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun timeBoundaryAndKoreanTimezone() {
         val now = ZonedDateTime.parse("2026-10-27T22:30:00Z")
         assertEquals("2026-10-29T07:30+09:00[Asia/Seoul]", nextDailyNotification(450, now).toString())
@@ -27,6 +37,11 @@ class DailyNotificationTest {
         assertEquals(today.plusDays(1), nextDailyNotification(0, now).toLocalDate())
         assertEquals("2027-01-01T00:00+09:00[Asia/Seoul]", nextDailyNotification(0, ZonedDateTime.parse("2026-12-31T23:59:00+09:00")).toString())
     }
+    /**
+     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun settingsValidateAndRemainIndependent() {
         assertFailsWith<IllegalArgumentException> { DailyNotificationSettings(minutes = 1440) }
         assertFailsWith<IllegalArgumentException> { nextDailyNotification(-1, ZonedDateTime.now()) }
@@ -36,6 +51,11 @@ class DailyNotificationTest {
         assertEquals("06:00", preferences.timetableNotification.timeLabel)
         assertEquals("11:30", preferences.mealNotification.timeLabel)
     }
+    /**
+     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun timetableListsCurrentLessonsInOrderAndHonorsTeacherSetting() {
         val snapshot = TimetableSnapshot(selection, weekStart(today).toString(), fetchedAt = 0, classCounts = listOf(1), slots = listOf(
             LessonSlot(today.toString(), 3, "10:00", Lesson("영어", "김선생")),
@@ -49,6 +69,11 @@ class DailyNotificationTest {
         assertFalse(timetableNotificationText(snapshot, today, false).body.contains("선생"))
         assertContains(timetableNotificationText(snapshot, today, true, cached = true).body, "저장된 자료")
     }
+    /**
+     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun deliveryRequiresFinishedSetupAndItsOwnSchoolAndSwitch() {
         val preferences = AppPreferences(selection = selection, timetableNotification = DailyNotificationSettings(true, 450), mealNotification = DailyNotificationSettings(true, 690))
         assertTrue(isNotificationReady(preferences, NotificationKind.TIMETABLE))
@@ -61,8 +86,18 @@ class DailyNotificationTest {
         assertTrue(isNotificationReady(connected, NotificationKind.MEALS))
         assertFalse(isNotificationReady(connected.copy(mealNotification = DailyNotificationSettings(false, 690)), NotificationKind.MEALS))
     }
+    /**
+     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun mealsOnlyIncludeExistingMenusForTodayInMealOrder() {
         val school = NeisSchoolRef("G10", "1", "검증고", "검증청", "주소")
+        /**
+         * 역할: 테스트 시나리오(급식)의 기대 결과를 검증한다.
+         * 입력: date: LocalDate, type: MealType, menu: List<String>.
+         * 출력: MealEntry 값.
+         */
         fun meal(date: LocalDate, type: MealType, menu: List<String>) = MealEntry(date.toString(), type.code, type.label, "", menu)
         val snapshot = MealSnapshot(school, weekStart(today).toString(), 0, listOf(
             meal(today, MealType.DINNER, listOf("저녁밥", "국")),

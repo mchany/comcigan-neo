@@ -13,7 +13,7 @@
     android:maxResizeHeight="600dp"
     android:updatePeriodMillis="1800000"
     android:initialLayout="@layout/widget_loading_m3"
-    android:previewLayout="@layout/widget_preview_timetable_m3"
-    android:description="@string/widget_timetable_description"
+    android:previewLayout="@layout/widget_preview_timetable_small_m3"
+    android:description="@string/widget_timetable_compact_description"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen" />

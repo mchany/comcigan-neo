@@ -35,9 +35,24 @@ class TimetableLayoutTest {
                 Lesson("과목$period", "교사$period"), changed = period == 3)
         } })
 
+    /**
+     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun everyWeeklyCellFitsWithoutScrollingAcrossViewports() = checkViewports(weekly = true)
+    /**
+     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun everyTodayPeriodFitsAndTeacherStaysOnSameLine() = checkViewports(weekly = false)
 
+    /**
+     * 역할: 여러 화면 크기에서 표가 표시 영역에 맞는지 검사한다.
+     * 입력: weekly: Boolean.
+     * 출력: 없음(Unit).
+     */
     private fun checkViewports(weekly: Boolean) {
         var viewport by mutableStateOf(cases.first())
         val state = NeoState(initializing = false, preferences = AppPreferences(selection), snapshot = snapshot)

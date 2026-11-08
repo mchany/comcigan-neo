@@ -25,6 +25,11 @@ private val Korean = Locale.KOREAN
 private val DateLabel = DateTimeFormatter.ofPattern("M월 d일 EEEE", Korean)
 
 @Composable
+/**
+ * 역할: 앱의 주요 화면과 이동 상태를 구성한다.
+ * 입력: viewModel: NeoViewModel, notificationTarget: String?, notificationEvent: Int.
+ * 출력: 없음(Unit).
+ */
 fun NeoApp(viewModel: NeoViewModel, notificationTarget: String? = null, notificationEvent: Int = 0) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(NeoTab.TODAY) }

@@ -33,11 +33,21 @@ import io.github.mchany.comciganneo.model.*
 import io.github.mchany.comciganneo.notifications.*
 
 @Composable
+/**
+ * 역할: 알림 사용 여부와 시각 설정 화면을 표시한다.
+ * 입력: state: NeoState, viewModel: NeoViewModel.
+ * 출력: 없음(Unit).
+ */
 fun NotificationSettings(state: NeoState, viewModel: NeoViewModel) {
     val context = LocalContext.current
     val app = context.applicationContext as NeoApplication
     var accessVersion by remember { mutableIntStateOf(0) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    /**
+     * 역할: 알림 권한과 현재 예약 상태를 다시 확인한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     fun refreshAccess() { accessVersion++; app.refreshNotificationSchedules() }
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) refreshAccess() }
@@ -97,6 +107,11 @@ fun NotificationSettings(state: NeoState, viewModel: NeoViewModel) {
 }
 
 @Composable
+/**
+ * 역할: 알림 종류와 발송 시각을 정하는 초기 설정 화면을 표시한다.
+ * 입력: state: NeoState, viewModel: NeoViewModel.
+ * 출력: 없음(Unit).
+ */
 fun InitialNotificationSetupScreen(state: NeoState, viewModel: NeoViewModel) {
     BackHandler { if (!state.notificationSetupSaving) viewModel.backToMealSetup() }
     Scaffold(topBar = {

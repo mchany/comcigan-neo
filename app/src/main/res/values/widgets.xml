@@ -32,4 +32,14 @@
         name="widget_preview_meal_chip">중식</string>
     <string
         name="widget_preview_meals_details">현미밥\n미역국\n배추김치</string>
+    <string name="widget_timetable_compact_description">오늘의 교시·시작 시각·과목을 목록으로 한눈에 확인해요.</string>
+    <string name="widget_compact_preview_date">11월 9일 (월)</string>
+    <string name="widget_compact_preview_fetched">조회 07:25</string>
+    <string name="widget_compact_preview_subject_1">국어</string>
+    <string name="widget_compact_preview_subject_2">수학</string>
+    <string name="widget_compact_preview_subject_3">영어</string>
+    <string name="widget_compact_preview_subject_4">한국사</string>
+    <string name="widget_compact_preview_subject_5">통합과학</string>
+    <string name="widget_compact_preview_subject_6">체육</string>
+    <string name="widget_compact_preview_subject_7">자율</string>
 </resources>

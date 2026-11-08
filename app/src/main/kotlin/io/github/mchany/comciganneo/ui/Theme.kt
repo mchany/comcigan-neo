@@ -32,6 +32,11 @@ internal val Dark = darkColorScheme(
 )
 
 @Composable
+/**
+ * 역할: 사용자 설정에 맞는 테마를 적용한다.
+ * 입력: preferences: AppPreferences, content: @Composable () -> Unit.
+ * 출력: 없음(Unit).
+ */
 fun NeoTheme(preferences: AppPreferences = AppPreferences(), content: @Composable () -> Unit) {
     val dark = when (preferences.themeMode) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
@@ -52,6 +57,11 @@ fun NeoTheme(preferences: AppPreferences = AppPreferences(), content: @Composabl
     MaterialTheme(colorScheme = colors, content = content)
 }
 
+/**
+ * 역할: 앱 설정과 시스템 상태에 맞는 색상 구성을 만든다.
+ * 입력: context: Context, preferences: AppPreferences, darkOverride: Boolean?.
+ * 출력: ColorScheme 값.
+ */
 internal fun neoColorScheme(context: Context, preferences: AppPreferences, darkOverride: Boolean? = null): ColorScheme {
     val dark = darkOverride ?: when (preferences.themeMode) {
         ThemeMode.SYSTEM -> context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
@@ -63,6 +73,11 @@ internal fun neoColorScheme(context: Context, preferences: AppPreferences, darkO
     } else if (dark) Dark else Light
 }
 
+/**
+ * 역할: 현재 Context가 Activity이거나 Activity를 감싼 Context인지 확인해 Activity를 반환한다.
+ * 입력: 없음.
+ * 출력: Activity? 값.
+ */
 private tailrec fun Context.activity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.activity()

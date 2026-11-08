@@ -6,8 +6,18 @@ import kotlin.test.*
 
 class WidgetModelTest {
     private val date = LocalDate.of(2026, 10, 28)
+    /**
+     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun onlyExistingMealsForTheDisplayedDateAppear() {
         val school = NeisSchoolRef("G10", "1", "검증학교", "교육청", "주소")
+        /**
+         * 역할: 테스트 시나리오(항목)의 기대 결과를 검증한다.
+         * 입력: day: LocalDate, code: String, menu: List<String>.
+         * 출력: MealEntry 값.
+         */
         fun entry(day: LocalDate, code: String, menu: List<String>) = MealEntry(day.toString(), code, MealType.fromCode(code).label, "", menu)
         val snapshot = MealSnapshot(school, weekStart(date).toString(), 0, listOf(
             entry(date, "3", listOf("저녁밥")), entry(date, "1", listOf(" ")),
@@ -15,6 +25,11 @@ class WidgetModelTest {
         assertEquals(listOf("2", "3", "9"), widgetMeals(snapshot, date).map { it.typeCode })
         assertTrue(widgetMeals(null, date).isEmpty())
     }
+    /**
+     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun focusUsesProvidedStartsWithoutInventingEnds() {
         val slots = listOf(LessonSlot(date.toString(), 1, "08:10", Lesson("국어", "김")),
             LessonSlot(date.toString(), 2, "09:10", Lesson("영어", "이")))
@@ -26,6 +41,11 @@ class WidgetModelTest {
         assertNull(afterLast.following)
         assertNull(widgetFocus(emptyList(), LocalTime.NOON).lesson)
     }
+    /**
+     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun missingTimesAndCancelledLessonsDoNotFabricateProgress() {
         val selection = ClassSelection(School(1, "검증학교", "대전"), 1, 1)
         val snapshot = TimetableSnapshot(selection, weekStart(date).toString(), fetchedAt = 0, classCounts = listOf(1), slots = listOf(
@@ -36,6 +56,11 @@ class WidgetModelTest {
         assertEquals(listOf(2), slots.map { it.period })
         assertEquals("오늘의 수업", widgetFocus(slots, LocalTime.NOON).label)
     }
+    /**
+     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun layoutAdaptsToWideTallAndLargeFonts() {
         assertFalse(wideWidget(170, 180, 1f))
         assertTrue(wideWidget(360, 180, 1f))

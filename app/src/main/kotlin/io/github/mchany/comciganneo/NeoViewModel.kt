@@ -55,11 +55,26 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
             }
         }
     }
+    /**
+     * 역할: 시간표 학교 및 학급 설정 화면을 연다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     fun openSetup() { mutable.update { it.copy(setup = true, candidate = null, setupError = null, classCounts = emptyList()) } }
+    /**
+     * 역할: 시간표 학교 설정 화면을 닫고 진행 중인 검색을 취소한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     fun closeSetup() {
         searchJob?.cancel(); candidateJob?.cancel()
         mutable.update { it.copy(setup = false, searching = false, candidate = null, setupError = null) }
     }
+    /**
+     * 역할: 학교 검색어로 결과를 가져와 화면 상태를 갱신한다.
+     * 입력: query: String.
+     * 출력: 없음(Unit).
+     */
     fun search(query: String) {
         searchJob?.cancel(); candidateJob?.cancel()
         if (query.trim().length < 2) {
@@ -74,6 +89,11 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
               catch (e: Exception) { mutable.update { it.copy(searching = false, setupError = userMessage(e)) } }
         }
     }
+    /**
+     * 역할: 선택 학교의 시간표 미리보기를 조회하고 학급 수를 갱신한다.
+     * 입력: school: School.
+     * 출력: 없음(Unit).
+     */
     fun candidate(school: School) {
         candidateJob?.cancel()
         candidateJob = viewModelScope.launch {
@@ -85,6 +105,11 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
               catch (e: Exception) { mutable.update { it.copy(searching = false, setupError = userMessage(e)) } }
         }
     }
+    /**
+     * 역할: 선택한 학교와 학년, 반을 저장한다.
+     * 입력: grade: Int, classNumber: Int.
+     * 출력: 없음(Unit).
+     */
     fun select(grade: Int, classNumber: Int) {
         val school = mutable.value.candidate ?: return
         setting {
@@ -92,12 +117,27 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
             mutable.update { it.copy(setup = false) }
         }
     }
+    /**
+     * 역할: 표시할 주간 시간표를 바꾸고 자료를 불러온다.
+     * 입력: week: Int.
+     * 출력: 없음(Unit).
+     */
     fun week(week: Int) {
         require(week in 0..1)
         if (week == mutable.value.week) return
         mutable.update { it.copy(week = week) }; load()
     }
+    /**
+     * 역할: 시간표를 강제로 다시 조회한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     fun refresh() { if (!mutable.value.loading) load(force = true) }
+    /**
+     * 역할: 앱이 다시 보일 때 오늘 날짜와 시간표 및 급식 캐시의 최신 상태를 확인한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     fun onForeground() {
         val today = schoolToday()
         if (today != lastToday) {
@@ -112,6 +152,11 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
         if (!mutable.value.loading && mutable.value.preferences.selection != null &&
             (snapshot == null || !snapshot.isFreshTimetable(mutable.value.week))) load()
     }
+    /**
+     * 역할: 위젯 렌더링에 필요한 저장 설정과 시간표 및 급식 자료를 읽는다.
+     * 입력: force: Boolean.
+     * 출력: 없음(Unit).
+     */
     private fun load(force: Boolean = false) {
         loadJob?.cancel()
         val selection = mutable.value.preferences.selection ?: return
@@ -130,6 +175,11 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
               catch (e: Exception) { mutable.update { it.copy(loading = false, error = userMessage(e)) } }
         }
     }
+    /**
+     * 역할: 화면 설정 변경을 실행하고 오류 상태를 갱신한다.
+     * 입력: block: suspend () -> Unit.
+     * 출력: 없음(Unit).
+     */
     private fun setting(block: suspend () -> Unit) {
         viewModelScope.launch {
             try { block() }
@@ -137,13 +187,53 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
             catch (e: Exception) { mutable.update { it.copy(error = "설정을 저장하지 못했어요. 다시 시도해 주세요.") } }
         }
     }
+    /**
+     * 역할: 화면 테마 모드를 저장한다.
+     * 입력: mode: ThemeMode.
+     * 출력: 없음(Unit).
+     */
     fun theme(mode: ThemeMode) = setting { repository.theme(mode) }
+    /**
+     * 역할: 시스템 동적 색상 사용 여부를 저장한다.
+     * 입력: enabled: Boolean.
+     * 출력: 없음(Unit).
+     */
     fun dynamic(enabled: Boolean) = setting { repository.dynamic(enabled) }
+    /**
+     * 역할: 교사 이름 표시 여부를 저장한다.
+     * 입력: enabled: Boolean.
+     * 출력: 없음(Unit).
+     */
     fun teachers(enabled: Boolean) = setting { repository.teachers(enabled) }
+    /**
+     * 역할: 위젯 색상 팔레트 선택을 저장한다.
+     * 입력: palette: WidgetPalette.
+     * 출력: 없음(Unit).
+     */
     fun widgetPalette(palette: WidgetPalette) = setting { repository.widgetPalette(palette) }
+    /**
+     * 역할: 해당 종류의 알림 사용 여부를 저장한다.
+     * 입력: kind: NotificationKind, enabled: Boolean.
+     * 출력: 없음(Unit).
+     */
     fun notificationEnabled(kind: NotificationKind, enabled: Boolean) = setting { repository.updateNotification(kind, enabled = enabled) }
+    /**
+     * 역할: 해당 종류의 알림 시각을 저장한다.
+     * 입력: kind: NotificationKind, minutes: Int.
+     * 출력: 없음(Unit).
+     */
     fun notificationTime(kind: NotificationKind, minutes: Int) = setting { repository.updateNotification(kind, minutes = minutes) }
+    /**
+     * 역할: 초기 급식 학교 설정 단계로 돌아간다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     fun backToMealSetup() = setting { repository.returnToMealSetup() }
+    /**
+     * 역할: 초기 알림 설정 상태를 완료로 저장한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     fun finishNotificationSetup() {
         if (mutable.value.notificationSetupSaving) return
         viewModelScope.launch {
@@ -155,6 +245,11 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
               catch (_: Exception) { mutable.update { it.copy(notificationSetupSaving = false, error = "알림 설정을 저장하지 못했어요. 다시 시도해 주세요.") } }
         }
     }
+    /**
+     * 역할: 시간표와 급식 캐시를 삭제한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     fun clearCache() = setting {
         loadJob?.cancelAndJoin()
         mealJob?.cancelAndJoin()
@@ -163,12 +258,27 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
             meal = it.meal.copy(snapshot = null, loading = false, error = "저장된 급식을 삭제했어요.")) }
     }
 
+    /**
+     * 역할: 급식 화면에서 표시할 날짜를 바꾸고 새 자료를 불러온다.
+     * 입력: date: LocalDate.
+     * 출력: 없음(Unit).
+     */
     fun mealDate(date: LocalDate) {
         if (date.toString() == mutable.value.meal.date) return
         mutable.update { it.copy(meal = it.meal.copy(date = date.toString())) }
         loadMeals()
     }
+    /**
+     * 역할: 급식 자료를 강제로 새로 조회한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     fun refreshMeals() = loadMeals(force = true)
+    /**
+     * 역할: 현재 설정과 날짜에 필요한 급식 자료를 불러온다.
+     * 입력: force: Boolean.
+     * 출력: 없음(Unit).
+     */
     private fun loadMeals(force: Boolean = false) {
         mealJob?.cancel()
         val school = mutable.value.mealSchool ?: return
@@ -186,10 +296,20 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
               catch (e: Exception) { mutable.update { it.copy(meal = it.meal.copy(loading = false, error = mealUserMessage(e))) } }
         }
     }
+    /**
+     * 역할: 급식 학교 연결 화면을 연다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     fun openMealConnection() {
         mutable.update { it.copy(meal = it.meal.copy(connecting = true, connectionError = null)) }
         if (mutable.value.preferences.mealKeyConfigured) searchMealSchools(mutable.value.preferences.selection?.school?.name.orEmpty())
     }
+    /**
+     * 역할: 초기 급식 학교 연결 단계를 건너뛴다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     fun skipInitialMealSetup() {
         if (mutable.value.meal.saving) return
         viewModelScope.launch {
@@ -202,11 +322,21 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
               catch (_: Exception) { mutable.update { it.copy(meal = it.meal.copy(saving = false, connectionError = "설정을 저장하지 못했어요. 다시 시도해 주세요.")) } }
         }
     }
+    /**
+     * 역할: 급식 학교 연결 화면과 검색 작업을 닫는다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     fun closeMealConnection() {
         if (mutable.value.meal.saving) return
         mealSearchJob?.cancel()
         mutable.update { it.copy(meal = it.meal.copy(connecting = false, searching = false)) }
     }
+    /**
+     * 역할: NEIS에서 급식 학교 검색 결과를 조회한다.
+     * 입력: query: String.
+     * 출력: 없음(Unit).
+     */
     fun searchMealSchools(query: String) {
         mealSearchJob?.cancel()
         if (query.trim().length < 2) {
@@ -225,6 +355,11 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
               catch (e: Exception) { mutable.update { it.copy(meal = it.meal.copy(searching = false, connectionError = mealUserMessage(e))) } }
         }
     }
+    /**
+     * 역할: 시간표 학교와 급식 학교의 연결 설정을 저장한다.
+     * 입력: school: NeisSchoolRef?.
+     * 출력: 없음(Unit).
+     */
     fun connectMealSchool(school: NeisSchoolRef?) {
         val code = mutable.value.preferences.selection?.school?.code ?: return
         if (mutable.value.meal.saving) return
@@ -237,6 +372,11 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
               catch (_: Exception) { mutable.update { it.copy(meal = it.meal.copy(saving = false, connectionError = "급식 학교를 저장하지 못했어요. 다시 시도해 주세요.")) } }
         }
     }
+    /**
+     * 역할: 급식 캐시 전체를 삭제하고 변경 이벤트를 알린다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     fun clearMealCache() {
         viewModelScope.launch {
             mealJob?.cancelAndJoin()

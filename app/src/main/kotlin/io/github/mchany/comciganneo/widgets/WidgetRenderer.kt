@@ -24,6 +24,11 @@ import java.util.Locale
 
 object WidgetRenderer {
     private val lock = Mutex()
+    /**
+     * 역할: 현재 등록된 위젯을 모두 다시 렌더링한다.
+     * 입력: context: Context.
+     * 출력: 없음(Unit).
+     */
     suspend fun updateAll(context: Context) = lock.withLock {
         val widgets = NeoWidgets.instances(context)
         if (widgets.isEmpty()) return@withLock
@@ -37,12 +42,22 @@ object WidgetRenderer {
         NeoWidgets.scheduleBoundary(context, data)
     }
 
+    /**
+     * 역할: 위젯 크기에 맞는 화면 크기별 뷰를 만든다.
+     * 입력: context: Context, id: Int, kind: WidgetKind, options: Bundle, data: WidgetData.
+     * 출력: RemoteViews 값.
+     */
     fun responsive(context: Context, id: Int, kind: WidgetKind, options: Bundle, data: WidgetData): RemoteViews {
         val defaultWidth = if (AppWidgetManager.getInstance(context).getAppWidgetInfo(id)?.provider?.className?.contains("Wide") == true) 340 else 170
         val portrait = SizeF(options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH).takeIf { it > 0 }?.toFloat() ?: defaultWidth.toFloat(),
             options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT).takeIf { it > 0 }?.toFloat() ?: 180f)
         val landscape = SizeF(options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH).takeIf { it > 0 }?.toFloat() ?: portrait.width,
             options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT).takeIf { it > 0 }?.toFloat() ?: portrait.height)
+        /**
+         * 역할: 크기 옵션을 반영해 위젯 화면을 만든다.
+         * 입력: size: SizeF.
+         * 출력: RemoteViews 값.
+         */
         fun forSize(size: SizeF) = build(context, id, kind, Bundle(options).apply {
             putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, size.width.toInt()); putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, size.height.toInt())
         }, data)
@@ -54,6 +69,11 @@ object WidgetRenderer {
         } else RemoteViews(forSize(landscape), forSize(portrait))
     }
 
+    /**
+     * 역할: 위젯 종류와 옵션, 데이터에 맞는 원격 뷰를 구성한다.
+     * 입력: context: Context, id: Int, kind: WidgetKind, options: Bundle, data: WidgetData.
+     * 출력: RemoteViews 값.
+     */
     fun build(context: Context, id: Int, kind: WidgetKind, options: Bundle, data: WidgetData): RemoteViews {
         val width = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 170).coerceAtLeast(130)
         val height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 180).coerceAtLeast(136)
@@ -72,15 +92,22 @@ object WidgetRenderer {
         views.setTextViewText(R.id.widget_empty, empty.orEmpty())
         views.setViewVisibility(R.id.widget_empty, if (empty == null) View.GONE else View.VISIBLE)
         views.setViewVisibility(R.id.widget_body, if (empty == null) View.VISIBLE else View.GONE)
-        if (kind == WidgetKind.TIMETABLE) {
+        if (kind == WidgetKind.TIMETABLE && wide) {
             views.setViewVisibility(R.id.widget_focus_panel, if (empty == null) View.VISIBLE else View.GONE)
         }
         if (empty != null) return views
 
         when (kind) {
             WidgetKind.TIMETABLE -> {
-                bindTimetable(views, data, colors, height, context.resources.configuration.fontScale)
-                if (wide) WidgetCollection.bind(context, views, R.id.widget_list, id, kind, "all", data, colors)
+                if (wide) {
+                    bindTimetable(views, data, colors, height, context.resources.configuration.fontScale)
+                    WidgetCollection.bind(context, views, R.id.widget_list, id, kind, "all", data, colors)
+                } else {
+                    tintWidgetSurface(views, R.id.widget_compact_surface, R.id.widget_compact_background, colors.cardSurface) {
+                        colors.background(width - 16, height - 64, true)
+                    }
+                    WidgetCollection.bind(context, views, R.id.widget_list, id, kind, "all", data, colors, compact = true)
+                }
             }
             WidgetKind.MEALS -> if (wide) bindMeals(context, views, id, data, colors, width, height)
                 else WidgetCollection.bind(context, views, R.id.widget_list, id, kind, "all", data, colors)
@@ -88,6 +115,11 @@ object WidgetRenderer {
         return views
     }
 
+    /**
+     * 역할: 학교와 선택 날짜 정보를 위젯 헤더에 표시한다.
+     * 입력: context: Context, views: RemoteViews, kind: WidgetKind, data: WidgetData, colors: WidgetColors, width: Int, height: Int, wide: Boolean.
+     * 출력: 없음(Unit).
+     */
     private fun bindHeader(
         context: Context, views: RemoteViews, kind: WidgetKind, data: WidgetData,
         colors: WidgetColors, width: Int, height: Int, wide: Boolean,
@@ -117,6 +149,11 @@ object WidgetRenderer {
         views.setOnClickPendingIntent(R.id.widget_refresh, PendingIntent.getBroadcast(context, 500, refresh, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
     }
 
+    /**
+     * 역할: 위젯에 표시할 자료가 없을 때 안내 문구를 반환한다.
+     * 입력: data: WidgetData, kind: WidgetKind.
+     * 출력: String? 값.
+     */
     private fun emptyMessage(data: WidgetData, kind: WidgetKind): String? = when {
         data.preferences.selection == null -> "앱을 열어 학교·학급을\n선택해 주세요."
         kind == WidgetKind.MEALS && data.mealSchool == null -> "설정에서 급식 학교를\n연결해 주세요."
@@ -127,6 +164,11 @@ object WidgetRenderer {
         else -> null
     }
 
+    /**
+     * 역할: 시간표 항목을 위젯 목록에 표시한다.
+     * 입력: views: RemoteViews, data: WidgetData, colors: WidgetColors, height: Int, fontScale: Float.
+     * 출력: 없음(Unit).
+     */
     private fun bindTimetable(views: RemoteViews, data: WidgetData, colors: WidgetColors, height: Int, fontScale: Float) {
         val focus = data.focus
         val slot = focus.lesson
@@ -164,6 +206,11 @@ object WidgetRenderer {
             R.id.meal_title_3_surface, R.id.meal_title_3_background, R.id.meal_caption_3, R.id.meal_list_3),
     )
 
+    /**
+     * 역할: 급식 항목을 위젯 목록에 표시한다.
+     * 입력: context: Context, views: RemoteViews, id: Int, data: WidgetData, colors: WidgetColors, width: Int, height: Int.
+     * 출력: 없음(Unit).
+     */
     private fun bindMeals(
         context: Context, views: RemoteViews, id: Int, data: WidgetData,
         colors: WidgetColors, width: Int, height: Int,
@@ -186,6 +233,11 @@ object WidgetRenderer {
         }
     }
 
+    /**
+     * 역할: 위젯을 눌렀을 때 지정 탭으로 앱을 여는 PendingIntent를 만든다.
+     * 입력: context: Context, kind: WidgetKind, mutable: Boolean.
+     * 출력: PendingIntent 값.
+     */
     fun openApp(context: Context, kind: WidgetKind, mutable: Boolean): PendingIntent = PendingIntent.getActivity(context, 410 + kind.ordinal + if (mutable) 20 else 0,
         Intent(context, MainActivity::class.java).setAction(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
             .putExtra("notification_kind", kind.key).putExtra("notification_event", "widget-${kind.key}-${System.currentTimeMillis()}")

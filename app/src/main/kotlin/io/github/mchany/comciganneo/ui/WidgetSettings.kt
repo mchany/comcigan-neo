@@ -20,6 +20,11 @@ import io.github.mchany.comciganneo.model.*
 import io.github.mchany.comciganneo.widgets.*
 
 @Composable
+/**
+ * 역할: 위젯 표시 설정 화면을 표시한다.
+ * 입력: state: NeoState, viewModel: NeoViewModel.
+ * 출력: 없음(Unit).
+ */
 fun WidgetSettings(state: NeoState, viewModel: NeoViewModel) {
     val context = LocalContext.current
     val manager = AppWidgetManager.getInstance(context)

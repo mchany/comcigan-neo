@@ -4,8 +4,8 @@ import android.appwidget.*
 import android.content.ComponentName
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Rect
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.SizeF
@@ -33,6 +33,11 @@ import org.junit.runner.RunWith
 import java.io.File
 import java.time.ZonedDateTime
 
+/**
+ * 역할: 위젯 표시와 검증에 사용할 시간표 및 급식 데이터를 준비한다.
+ * 입력: context: Context.
+ * 출력: WidgetData 값.
+ */
 suspend fun seedWidgetData(context: Context): WidgetData {
     check(context.packageName.endsWith(".smoke"))
     val date = schoolToday()
@@ -62,21 +67,46 @@ suspend fun seedWidgetData(context: Context): WidgetData {
 class WidgetHostTest {
     @get:Rule val activity = ActivityScenarioRule(MainActivity::class.java)
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
+    /**
+     * 역할: UI 스레드에서 테스트 동작을 실행한다.
+     * 입력: block: () -> Unit.
+     * 출력: 없음(Unit).
+     */
     private fun main(block: () -> Unit) = instrumentation.runOnMainSync(block)
+    /**
+     * 역할: 조건이 참이 될 때까지 제한 시간 동안 반복 확인한다.
+     * 입력: check: () -> Boolean.
+     * 출력: 없음(Unit).
+     */
     private fun eventually(check: () -> Boolean) {
         val deadline = SystemClock.elapsedRealtime() + 30_000
         while (!check()) { if (SystemClock.elapsedRealtime() > deadline) error("Widget update timed out"); SystemClock.sleep(100) }
     }
+    /**
+     * 역할: 화면 뷰 계층을 순회해 표시 중인 텍스트를 수집한다.
+     * 입력: view: View.
+     * 출력: List<String> 값.
+     */
     private fun texts(view: View): List<String> = if (!view.isShown) emptyList() else when (view) {
         is TextView -> listOf(view.text.toString())
         is ViewGroup -> (0 until view.childCount).flatMap { texts(view.getChildAt(it)) }
         else -> emptyList()
     }
+    /**
+     * 역할: 위젯의 크기 설정을 담은 Bundle을 만든다.
+     * 입력: width: Int, height: Int.
+     * 출력: Bundle 값.
+     */
     private fun options(width: Int, height: Int) = Bundle().apply {
         putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, width); putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, width)
         putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, height); putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, height)
         putParcelableArrayList(AppWidgetManager.OPTION_APPWIDGET_SIZES, arrayListOf(SizeF(width.toFloat(), height.toFloat())))
     }
+    /**
+     * 역할: 실제 호스트에서 2×2 전체 시간표와 가로형·급식 위젯의 크기, 색상, 자료 연결을 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun realHostCollectionsResizeColorsAndUnlink() = runBlocking<Unit> {
         val context = instrumentation.targetContext
         val data = seedWidgetData(context)
@@ -98,6 +128,11 @@ class WidgetHostTest {
             main { host.startListening() }
             activity.scenario.onActivity { screen ->
                 val density = screen.resources.displayMetrics.density
+                /**
+                 * 역할: 밀도 배율을 적용해 dp 값을 픽셀 값으로 변환한다.
+                 * 입력: dp: Int.
+                 * 출력: Int 값.
+                 */
                 fun px(dp: Int) = (dp * density).toInt()
                 val root = LinearLayout(screen).apply { orientation = LinearLayout.VERTICAL; setPadding(px(12), px(32), px(12), px(16)); setBackgroundColor(0xffdce4f7.toInt()) }
                 root.addView(TextView(screen).apply { text = "시간표 · 급식 위젯"; textSize = 18f; setTextColor(0xff263451.toInt()) }, LinearLayout.LayoutParams(-1, px(36)))
@@ -133,13 +168,22 @@ class WidgetHostTest {
                 views.indices.forEach { index -> views[index].updateAppWidget(WidgetRenderer.responsive(context, ids[index],
                     if (index == 0 || index == 2) WidgetKind.TIMETABLE else WidgetKind.MEALS, manager.getAppWidgetOptions(ids[index]), demo)) }
             }
-            eventually { var found = false; main { found = texts(views[0]).any { it.contains("4교시") } && texts(views[3]).any { it.contains("점심검증밥") } }; found }
+            eventually { var found = false; main { found = views[0].findViewById<ListView>(R.id.widget_list)?.adapter?.count == 7 && texts(views[3]).any { it.contains("점심검증밥") } }; found }
             main {
-                val following = views[0].findViewById<TextView>(R.id.widget_following)
-                val rect = Rect()
-                assertTrue("Following lesson remains fully visible", following.getGlobalVisibleRect(rect) && rect.height() >= following.height)
+                val compactList = views[0].findViewById<ListView>(R.id.widget_list)
+                assertEquals("All periods start in view in the compact widget", 0, compactList.firstVisiblePosition)
+                assertEquals("All seven periods fit the compact widget", 6, compactList.lastVisiblePosition)
+                assertFalse("Compact rows prioritize subjects", texts(views[0]).any { it.contains("김선생") })
             }
             val directory = File(context.getExternalFilesDir(null), "debug-screenshots").apply { mkdirs() }
+            main {
+                views.forEachIndexed { index, view ->
+                    val capture = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+                    view.draw(Canvas(capture))
+                    File(directory, "widgets-native-$index.png").outputStream().use { capture.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    capture.recycle()
+                }
+            }
             SystemClock.sleep(300)
             val bitmap = checkNotNull(instrumentation.uiAutomation.takeScreenshot())
             File(directory, "widgets-showcase.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()

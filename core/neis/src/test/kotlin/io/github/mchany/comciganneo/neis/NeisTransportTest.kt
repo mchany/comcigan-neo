@@ -11,6 +11,11 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class NeisTransportTest {
+    /**
+     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun readsUtf8AndDoesNotExposeRequestKeysOnHttpFailure() = runBlocking<Unit> {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/ok") { exchange ->
@@ -31,6 +36,11 @@ class NeisTransportTest {
         } finally { server.stop(0) }
     }
 
+    /**
+     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 입력: 없음.
+     * 출력: 없음(Unit).
+     */
     @Test fun cancellationInterruptsResponseBodyDownload() = runBlocking<Unit> {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         val started = CompletableDeferred<Unit>()
