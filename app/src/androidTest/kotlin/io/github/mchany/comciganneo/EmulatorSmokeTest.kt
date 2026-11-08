@@ -5,12 +5,13 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import io.github.mchany.comciganneo.model.weekStart
+import androidx.compose.ui.semantics.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.time.format.DateTimeFormatter
+import java.time.LocalDate
 
 /** Opt-in real-server test. Requires -PemulatorSmoke=true to isolate user settings. */
 @RunWith(AndroidJUnit4::class)
@@ -40,6 +41,15 @@ class EmulatorSmokeTest {
         val bitmap = checkNotNull(instrumentation.uiAutomation.takeScreenshot())
         File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         bitmap.recycle()
+    }
+
+    private fun displayedWeekStart(): LocalDate {
+        val matcher = SemanticsMatcher("published timetable") {
+            it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("week-table-") == true
+        }
+        waitFor(matcher)
+        val tag = compose.onNode(matcher).fetchSemanticsNode().config[SemanticsProperties.TestTag]
+        return LocalDate.parse(tag.removePrefix("week-table-"))
     }
 
     /**
@@ -81,11 +91,15 @@ class EmulatorSmokeTest {
         screenshot("01-today")
 
         compose.onNodeWithText("주간", useUnmergedTree = false).performClick()
-        waitFor(hasTestTag("week-table-${weekStart()}"))
-        compose.onNodeWithText("금 ${weekStart().plusDays(4).format(DateTimeFormatter.ofPattern("M.d"))}").assertIsDisplayed()
+        val firstStart = displayedWeekStart()
+        compose.onNodeWithText("금 ${firstStart.plusDays(4).format(DateTimeFormatter.ofPattern("M.d"))}").assertIsDisplayed()
         screenshot("02-week")
         compose.onNodeWithText("다음 주").performClick()
-        waitFor(hasTestTag("week-table-${weekStart(offset = 1)}"))
+        compose.waitUntil(timeoutMillis = 45_000) {
+            compose.onAllNodesWithTag("week-table-$firstStart").fetchSemanticsNodes().isEmpty() &&
+                compose.onAllNodesWithText("다음 주").fetchSemanticsNodes().isNotEmpty()
+        }
+        check(displayedWeekStart() > firstStart) { "Period selection must display a later published date" }
         screenshot("03-next-week")
         compose.onNodeWithContentDescription("목록으로 보기").performClick()
         waitFor(hasText("월요일", substring = true))

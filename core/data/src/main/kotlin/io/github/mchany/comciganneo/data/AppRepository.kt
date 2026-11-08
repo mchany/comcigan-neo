@@ -181,8 +181,8 @@ class AppRepository(context: Context, private val defaultNeisKey: String = "") {
      * 출력: TimetableSnapshot? 값.
      */
     suspend fun cached(selection: ClassSelection, week: Int): TimetableSnapshot? =
-        database.snapshots().find(selection.school.code, selection.grade, selection.classNumber, weekStart(offset = week).toString())
-            ?.let { runCatching { json.decodeFromString<TimetableSnapshot>(it.json) }.getOrNull() }
+        cachedTimetableSnapshot(database.snapshots().forClass(selection.school.code, selection.grade, selection.classNumber)
+            .mapNotNull { runCatching { json.decodeFromString<TimetableSnapshot>(it.json) }.getOrNull() }, selection, week)
     /**
      * 역할: 시간표 자료를 새로 조회해 저장한다.
      * 입력: selection: ClassSelection, week: Int.

@@ -1,3 +1,5 @@
+-dontobfuscate
+
 # WorkManager persists these names in its database and recreates workers by reflection.
 # Retain their names across app upgrades, even if no current UI path enqueues them.
 # Other methods remain eligible for optimization; library consumer rules cover Room,

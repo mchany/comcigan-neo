@@ -19,6 +19,12 @@ class ComciganParserTest {
         일일자료=Q자료(자료.자료14[g][c][d][p]);
         원자료=Q자료(자료.자료15[g][c][d][p]);
     """.trimIndent()
+    private fun obfuscatedPage(source: String, key: Int = 83): String {
+        val encoded = source.mapIndexed { index, char ->
+            "%04X".format(char.code xor ((key + index * 13) and 255))
+        }.joinToString("")
+        return """/* hour-obfuscated-v2 */(function(a,k){var s='';})([[0,"$encoded"]],$key);"""
+    }
     private val selection = ClassSelection(School(12045, "테스트고", "테스트"), 1, 1)
     /**
      * 역할: 파서 테스트에 사용할 컴시간 응답 샘플 문자열을 불러온다.
@@ -68,6 +74,16 @@ class ComciganParserTest {
      */
     @Test fun `detects changed service page`() {
         assertFailsWith<StructureChanged> { ComciganParser.serviceCodes("<html>maintenance</html>") }
+    }
+    @Test fun `extracts service codes from obfuscated current page scripts`() {
+        val codes = ComciganParser.serviceCodes(obfuscatedPage(page()))
+        assertEquals("/1234567?9876l", codes.searchRoute)
+        assertEquals("98765", codes.requestPrefix)
+        assertEquals("자료11", codes.teacherField)
+        assertEquals("자료12", codes.subjectField)
+        assertEquals("자료13", codes.updatedField)
+        assertEquals("자료14", codes.currentField)
+        assertEquals("자료15", codes.originalField)
     }
     /**
      * 역할: 테스트 시나리오의 기대 결과를 검증한다.

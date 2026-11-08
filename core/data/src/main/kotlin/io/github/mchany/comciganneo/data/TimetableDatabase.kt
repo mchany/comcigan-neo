@@ -15,6 +15,8 @@ data class SnapshotEntity(
 
 @Dao
 interface SnapshotDao {
+    @Query("SELECT * FROM snapshots WHERE schoolCode = :school AND grade = :grade AND classNumber = :classNumber ORDER BY weekStart DESC LIMIT 16")
+    suspend fun forClass(school: Int, grade: Int, classNumber: Int): List<SnapshotEntity>
     @Query("SELECT * FROM snapshots WHERE schoolCode = :school AND grade = :grade AND classNumber = :classNumber AND weekStart = :week LIMIT 1")
     /**
      * 역할: 학교, 학년, 반, 주차가 일치하는 시간표 스냅샷을 조회한다.

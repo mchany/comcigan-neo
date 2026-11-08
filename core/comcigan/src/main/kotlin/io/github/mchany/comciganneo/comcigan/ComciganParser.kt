@@ -10,6 +10,22 @@ import java.util.Base64
 
 class StructureChanged(message: String, cause: Throwable? = null) : Exception(message, cause)
 class TimetableUnavailable : Exception("아직 게시된 시간표가 없어요.")
+class TimetablePeriodChanged : Exception("시간표 조회 기간이 변경됐어요. 새로고침해 주세요.")
+
+/** Page-issued request credential. Deliberately redacted from ServiceCodes and diagnostic strings. */
+class HourRequestToken private constructor(private val value: String) {
+    internal fun headerValue(): String = value
+    override fun toString(): String = "HourRequestToken([redacted])"
+
+    companion object {
+        internal fun parse(value: String): HourRequestToken {
+            if (!Regex("[0-9a-fA-F]{1,4096}").matches(value)) {
+                throw StructureChanged("컴시간 페이지의 요청 토큰 형식이 변경됐어요.")
+            }
+            return HourRequestToken(value)
+        }
+    }
+}
 
 data class ServiceCodes(
     val searchRoute: String,
@@ -19,6 +35,12 @@ data class ServiceCodes(
     val updatedField: String,
     val currentField: String,
     val originalField: String,
+    val responseKeyHex: String? = null,
+    val schoolCodeDivisor: Int? = null,
+    val schoolCodeOffset: Int = 2,
+    val responseFormat: String = "enc2",
+    val encodedSchoolSearch: Boolean = false,
+    val requestToken: HourRequestToken? = null,
 ) {
     val timetableRoute: String get() = searchRoute.substringBefore('?') + "?"
     /**
@@ -26,7 +48,14 @@ data class ServiceCodes(
      * 입력: query: String.
      * 출력: String 값.
      */
-    fun searchPath(query: String): String = searchRoute + URLEncoder.encode(query, "MS949")
+    fun searchPath(query: String): String {
+        if (encodedSchoolSearch) {
+            val token = searchRoute.substringAfter('?') + uriComponent(query) + "_$responseFormat"
+            return timetableRoute + uriComponent(Base64.getEncoder().encodeToString(token.toByteArray(Charsets.UTF_8)))
+        }
+        return searchRoute + URLEncoder.encode(query, "MS949") +
+            if (responseKeyHex != null) "_$responseFormat" else ""
+    }
     /**
      * 역할: 시간표 API 경로를 구성한다.
      * 입력: schoolCode: Int, week: Int.
@@ -34,8 +63,24 @@ data class ServiceCodes(
      */
     fun timetablePath(schoolCode: Int, week: Int): String {
         require(week in 0..1)
-        val token = "${requestPrefix}_${schoolCode}_0_${week + 1}"
+        return timetableRequestPath(schoolCode, week + 1)
+    }
+    fun timetableRequestPath(schoolCode: Int, request: Int): String {
+        require(request > 0)
+        val token = "${requestPrefix}_${schoolCode}_0_${request}" +
+            if (responseKeyHex != null) "_$responseFormat" else ""
         return timetableRoute + Base64.getEncoder().encodeToString(token.toByteArray(Charsets.UTF_8))
+    }
+
+    // JavaScript encodeURIComponent uses UTF-8 and %20 for spaces, unlike form encoding.
+    private fun uriComponent(value: String): String = buildString {
+        val hex = "0123456789ABCDEF"
+        for (byte in value.toByteArray(Charsets.UTF_8)) {
+            val n = byte.toInt() and 255
+            val c = n.toChar()
+            if (c in 'A'..'Z' || c in 'a'..'z' || c in '0'..'9' || c in "-_.!~*'()") append(c)
+            else append('%').append(hex[n / 16]).append(hex[n % 16])
+        }
     }
 }
 
@@ -45,47 +90,42 @@ object ComciganParser {
      * 입력: page: String.
      * 출력: ServiceCodes 값.
      */
-    fun serviceCodes(page: String): ServiceCodes {
-        /**
-         * 역할: 정규식에서 지정한 값을 추출한다.
-         * 입력: name: String, pattern: String.
-         * 출력: String 값.
-         */
-        fun capture(name: String, pattern: String): String =
-            Regex(pattern).find(page)?.groupValues?.get(1)
-                ?: throw StructureChanged("컴시간 페이지의 $name 형식이 변경됐어요.")
-        return ServiceCodes(
-            capture("검색 경로", """\.(/\d+\?\d+l)"""),
-            capture("요청 코드", """sc_data\(\s*'(\d+)_"""),
-            "자료" + capture("교사", """성명\s*=\s*(?:Q성명\(\s*)?자료\.자료(\d+)"""),
-            "자료" + capture("과목", """자료\.자료(\d+)\[sb\]"""),
-            "자료" + capture("갱신 시각", """=\s*H시간표\.자료(\d+)"""),
-            "자료" + capture("현재 시간표", """일일자료\s*=\s*Q자료\(\s*자료\.자료(\d+)"""),
-            "자료" + capture("원본 시간표", """원자료\s*=\s*Q자료\(\s*자료\.자료(\d+)"""),
-        )
-    }
+    fun serviceCodes(page: String): ServiceCodes = ComciganServicePage.codes(page)
 
     /**
      * 역할: 문자열을 JSON 객체로 분석한다.
-     * 입력: text: String.
+     * 입력: text: String, 선택적 서비스 코드 codes: ServiceCodes?.
      * 출력: JsonObject 값.
      */
-    private fun objectFrom(text: String): JsonObject = try {
-        val clean = text.trim('\u0000', '\r', '\n', ' ', '\t', '\uFEFF')
+    private fun objectFrom(text: String, codes: ServiceCodes? = null): JsonObject = try {
+        val clean = ComciganResponseDecoder.decode(text, codes?.responseKeyHex)
         Json.parseToJsonElement(clean).jsonObject
+    } catch (e: StructureChanged) { throw e
     } catch (e: Exception) { throw StructureChanged("시간표 응답을 읽을 수 없어요.", e) }
 
     /**
      * 역할: 학교 검색 응답을 학교 목록으로 변환한다.
-     * 입력: text: String.
+     * 입력: text: String, 선택적 서비스 코드 codes: ServiceCodes?.
      * 출력: List<School> 값.
      */
-    fun schools(text: String): List<School> = try {
-        val items = objectFrom(text)["학교검색"]?.jsonArray
+    fun schools(text: String, codes: ServiceCodes? = null): List<School> = try {
+        val items = objectFrom(text, codes)["학교검색"]?.jsonArray
             ?: throw StructureChanged("학교 검색 응답 형식이 변경됐어요.")
         items.mapNotNull { item ->
             val row = item.jsonArray
-            val code = row.getOrNull(3)?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            // This footer is not a school. Its selector would otherwise point at the message in row[2].
+            if (row.size == 4 && row[0].jsonPrimitive.longOrNull == 0L && row[3].jsonPrimitive.intOrNull == 0) {
+                return@mapNotNull null
+            }
+            val index = codes?.schoolCodeDivisor?.let { divisor ->
+                val selector = row.firstOrNull()?.jsonPrimitive?.longOrNull
+                    ?.takeIf { it >= 0 } ?: throw StructureChanged("학교 코드 위치를 읽을 수 없어요.")
+                val selected = selector / divisor + codes.schoolCodeOffset
+                if (selected < 0 || selected >= row.size) throw StructureChanged("학교 코드 위치를 읽을 수 없어요.")
+                selected.toInt()
+            } ?: 3
+            val code = row.getOrNull(index)?.jsonPrimitive?.intOrNull
+                ?: if (codes?.responseKeyHex != null) throw StructureChanged("학교 코드를 읽을 수 없어요.") else return@mapNotNull null
             if (code == 0) null else School(code, row[2].jsonPrimitive.content, row[1].jsonPrimitive.content)
         }.distinctBy { it.code }
     } catch (e: StructureChanged) { throw e }
@@ -98,9 +138,10 @@ object ComciganParser {
      */
     fun timetable(text: String, codes: ServiceCodes, selection: ClassSelection, fetchedAt: Long): TimetableSnapshot {
         try {
-            val data = objectFrom(text)
+            val data = objectFrom(text, codes)
             if (data.isEmpty() || data["시작일"] == null) throw TimetableUnavailable()
             val start = LocalDate.parse(data.getValue("시작일").jsonPrimitive.content)
+            val publishedWeeks = ComciganPublishedWeeks.parse(data, start)
             val counts = data.getValue("학급수").jsonArray.drop(1).map { it.jsonPrimitive.int }
             require(selection.grade <= counts.size && selection.classNumber <= counts[selection.grade - 1]) {
                 "선택한 학급을 찾을 수 없어요. 학년과 반을 다시 선택해 주세요."
@@ -188,7 +229,7 @@ object ComciganParser {
             }
             return TimetableSnapshot(selection, start.toString(),
                 data[codes.updatedField]?.jsonPrimitive?.contentOrNull,
-                fetchedAt, counts, slots)
+                fetchedAt, counts, slots, publishedWeeks = publishedWeeks)
         } catch (e: TimetableUnavailable) { throw e }
           catch (e: StructureChanged) { throw e }
           catch (e: IllegalArgumentException) { throw StructureChanged(e.message ?: "시간표 형식이 변경됐어요.", e) }

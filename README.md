@@ -1,20 +1,18 @@
 # 컴시간neo
 
+
+[![Build Status](https://img.shields.io/github/actions/workflow/status/mchany/comcigan-neo/android.yml?branch=main&style=flat-square&label=Build%20Status)](https://github.com/mchany/comcigan-neo/actions/workflows/android.yml)
+[![Parser Health](https://img.shields.io/github/actions/workflow/status/mchany/comcigan-neo/parser-health.yml?branch=main&style=flat-square&label=Parser%20Health)](https://github.com/mchany/comcigan-neo/actions/workflows/parser-health.yml)
+
 Kotlin과 Jetpack Compose Material 3로 제작한 컴시간알리미 비공식 오픈소스 Android 클라이언트입니다.
 
-현재 배포 버전: **1.0.0 정식 — 초기 설정, 시간표·급식 알림, Material 3 홈 위젯**. Android 8.0(API 26) 이상에서 설치할 수 있습니다.
+현재 배포 버전: **1.0.5 — 학교 검색은 가능하지만 게시된 시간표가 없다고 표시되는 문제를 해결**. Android 8.0(API 26) 이상에서 설치할 수 있습니다.
 
-배포 APK: **버전 코드 7 · 약 1.79MB**. 같은 날 알림을 받은 뒤 수신 시각을 변경하면 알림이 누락되던 문제를 수정했습니다.
+[![APK 다운로드 · 1.0.5](https://img.shields.io/badge/APK_다운로드-1.0.5-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/download/v1.0.5/comcigan-neo-1.0.5.apk)
+[![릴리즈 노트 · 1.0.5](https://img.shields.io/badge/릴리즈_노트-1.0.5-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/tag/v1.0.5)
 
-R8 코드 최적화와 리소스 축소로 설치 파일 용량을 기존 약 12.78MB에서 약 **86% 줄였습니다**. [용량 축소 및 백그라운드 업데이트 검증](docs/apk-size.md)을 참고하세요.
-
-[![APK 다운로드 · 1.0.0](https://img.shields.io/badge/APK_다운로드-1.0.0-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/download/v1.0.0/comcigan-neo-1.0.0.apk)
-[![릴리즈 노트 · 1.0.0](https://img.shields.io/badge/릴리즈_노트-1.0.0-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/tag/v1.0.0)
-
-배포용 서명을 적용한 APK이며, **나이스 인증키가 포함되어 별도 키 입력 없이 급식을 조회할 수 있습니다.**
-처음 설치하면 학교·학급 → 급식 학교 → 알림 설정 순서로 안내합니다.
-0.2.1-beta 및 0.1.0-beta와 동일한 배포 인증서로 서명했으므로 기존 앱을 삭제하지 않고 덮어 설치할 수 있으며, 설정과 데이터가 유지됩니다.
-APK의 SHA-256은 릴리즈에 첨부된 [SHA256SUMS.txt](https://github.com/mchany/comcigan-neo/releases/download/v1.0.0/SHA256SUMS.txt)에서 확인할 수 있습니다.
+이전 릴리즈와 동일한 배포 인증서로 서명했으므로 기존 앱을 삭제하지 않고 덮어 설치할 수 있으며, 설정과 데이터가 유지됩니다.
+APK의 SHA-256은 릴리즈에 첨부된 [SHA256SUMS.txt](https://github.com/mchany/comcigan-neo/releases/download/v1.0.5/SHA256SUMS.txt)에서 확인할 수 있습니다.
 
 ## 구현한 기능
 
@@ -152,6 +150,24 @@ API의 수정일자는 포털 연계 일자이므로 앱에는 별도로 마지�
 급식 검색어·교육청 및 표준학교코드·조회 기간·인증키는 HTTPS로 나이스 서버에 전송됩니다.
 급식 클라이언트의 API 구조·필드 매핑은 MIT 라이선스의 [kimcore/neis.kt](https://github.com/kimcore/neis.kt)를 참고했습니다.
 Ktor 런타임이나 JitPack 의존성을 추가하지 않고 기존 환경에 맞게 구현했습니다.
+
+## Parser Health
+
+컴시간neo는 컴시간의 비공식 API 변경으로 인한 조회 장애를 조기에 감지하기 위해 **Cloudflare Workers와 GitHub Actions 기반의 파서 상태 자동 검증**을 운영합니다.
+
+매일 **00:00, 06:00, 12:00, 18:00(KST)** 실제 컴시간 서버에 연결하여 학교 검색과 이번 주·다음 주 시간표 조회를 검사합니다. 검증에는 앱에서 사용하는 Kotlin 파서를 그대로 사용하며, 결과는 README 상단의 `Parser Health` 배지에 반영됩니다.
+
+| 상태 | 의미 |
+| --- | --- |
+| 🟢 `passing` | 마지막 검사에서 파서가 정상 작동함 |
+| 🔴 `failing` | 마지막 검사에서 오류가 발생함 |
+| ⚪ `no status` | 아직 검사 결과가 없거나 확인할 수 없음 |
+
+다음 주 시간표가 아직 게시되지 않은 경우는 정상적인 미게시 상태로 처리합니다.
+
+**배지는 마지막 GitHub Actions 실행 결과를 나타내며, 실시간 서비스 상태를 보장하지 않습니다.** 네트워크 장애나 CI 환경 문제로도 검사가 실패할 수 있습니다.
+
+검사 기록과 오류 로그는 [Parser Health Workflow](https://github.com/mchany/comcigan-neo/actions/workflows/parser-health.yml)에서 확인할 수 있습니다.
 
 ## 검증과 제약
 
