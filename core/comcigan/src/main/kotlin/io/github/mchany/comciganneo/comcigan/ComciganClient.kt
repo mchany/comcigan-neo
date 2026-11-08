@@ -9,12 +9,15 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
 import java.nio.charset.Charset
+import java.time.LocalDate
 import java.util.concurrent.TimeUnit
 
 class ComciganRequestRejected : IOException("자료 조회 요청이 거부됐어요. (403)")
 class ComciganRateLimited : IOException("조회 요청이 너무 많아요. 잠시 후 다시 시도해 주세요. (429)")
 
-class ComciganClient internal constructor(private val baseUrl: String, private val http: OkHttpClient) {
+class ComciganClient internal constructor(
+    private val baseUrl: String, private val http: OkHttpClient, private val today: () -> LocalDate = ::schoolToday,
+) {
     constructor() : this("http://comci.net:4082", OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS).callTimeout(30, TimeUnit.SECONDS)
         .followRedirects(false).build())
@@ -44,7 +47,7 @@ class ComciganClient internal constructor(private val baseUrl: String, private v
             val current = codes()
             try { return block(current) }
             catch (e: Exception) {
-                if (e !is StructureChanged && e !is ComciganRequestRejected) throw e
+                if (e !is StructureChanged && e !is ComciganRequestRejected && e !is TimetablePeriodChanged) throw e
                 // Re-read a rotated page or rejected/expired credential at most once. Never retry 429.
                 lock.withLock { if (cachedCodes?.second == current) cachedCodes = null }
                 if (attempt == 1) throw e
@@ -57,12 +60,23 @@ class ComciganClient internal constructor(private val baseUrl: String, private v
         withCodes { codes -> ComciganParser.schools(get(codes.searchPath(query.trim()), Charsets.UTF_8, codes.requestToken), codes) }
     }
     suspend fun fetch(selection: ClassSelection, week: Int): TimetableSnapshot = withContext(Dispatchers.IO) {
+        require(week in 0..1)
         withCodes { codes ->
-            val snapshot = ComciganParser.timetable(get(codes.timetablePath(selection.school.code, week), Charsets.UTF_8, codes.requestToken),
+            val date = today()
+            fun read(request: Int) = ComciganParser.timetable(
+                get(codes.timetableRequestPath(selection.school.code, request), Charsets.UTF_8, codes.requestToken),
                 codes, selection, System.currentTimeMillis())
-            // Never display this week's data under a next-week heading.
-            if (snapshot.weekStart != weekStart(offset = week).toString()) throw TimetableUnavailable()
-            snapshot
+            // Request 1 is the official school's initial load. Discover its date/selector catalog afresh.
+            val initial = read(1)
+            val expected = initial.publishedWeekStarts(date).getOrNull(week) ?: throw TimetableUnavailable()
+            val request = if (initial.publishedWeeks.isEmpty()) week + 1
+                else initial.publishedWeeks.single { it.start == expected }.request
+            val result = if (request == 1) initial else read(request)
+            // A rotated list or wrong-period response must never be presented as unpublished or cached.
+            if (today() != date || result.weekStart != expected || !result.matchesPublishedWeek(week, date)) {
+                throw TimetablePeriodChanged()
+            }
+            result
         }
     }
 }

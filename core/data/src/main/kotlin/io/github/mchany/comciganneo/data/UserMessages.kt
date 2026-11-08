@@ -4,6 +4,7 @@ import io.github.mchany.comciganneo.comcigan.StructureChanged
 import io.github.mchany.comciganneo.comcigan.TimetableUnavailable
 import io.github.mchany.comciganneo.comcigan.ComciganRequestRejected
 import io.github.mchany.comciganneo.comcigan.ComciganRateLimited
+import io.github.mchany.comciganneo.comcigan.TimetablePeriodChanged
 import io.github.mchany.comciganneo.neis.*
 import java.io.IOException
 
@@ -21,6 +22,7 @@ fun mealUserMessage(error: Throwable): String = when (error) {
 }
 
 fun userMessage(error: Throwable): String = when (error) {
+    is TimetablePeriodChanged -> "시간표 조회 기간이 변경됐어요. 새로고침해 주세요."
     is ComciganRequestRejected -> "자료 조회 요청이 거부됐어요. 잠시 후 다시 시도해 주세요."
     is ComciganRateLimited -> "요청이 많아 잠시 조회할 수 없어요. 잠시 후 다시 시도해 주세요."
     is TimetableUnavailable -> "아직 게시된 시간표가 없어요. 나중에 다시 확인해 주세요."
