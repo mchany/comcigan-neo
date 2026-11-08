@@ -38,11 +38,17 @@ interface SnapshotDao {
      */
     @Query("DELETE FROM snapshots") suspend fun clear()
     /**
-     * 역할: 지정된 주차보다 오래된 시간표 스냅샷을 삭제한다.
-     * 입력: oldestWeek: String.
-     * 출력: 없음(Unit).
+     * 역할: 저장 시각별 만료 여부를 확인할 모든 학교의 시간표 캐시를 읽는다.
+     * 입력: 없음.
+     * 출력: 저장된 SnapshotEntity 목록.
      */
-    @Query("DELETE FROM snapshots WHERE weekStart < :oldestWeek") suspend fun prune(oldestWeek: String)
+    @Query("SELECT * FROM snapshots") suspend fun all(): List<SnapshotEntity>
+    /**
+     * 역할: 만료된 시간표 캐시를 기본 키로 삭제한다.
+     * 입력: 삭제할 SnapshotEntity 목록.
+     * 출력: 삭제한 행 수.
+     */
+    @Delete suspend fun delete(snapshots: List<SnapshotEntity>): Int
 }
 
 @Entity(tableName = "meal_snapshots", primaryKeys = ["officeCode", "schoolCode", "weekStart"])
@@ -70,11 +76,17 @@ interface MealSnapshotDao {
      */
     @Query("DELETE FROM meal_snapshots") suspend fun clear()
     /**
-     * 역할: 지정된 주차보다 오래된 급식 스냅샷을 삭제한다.
-     * 입력: oldestWeek: String.
-     * 출력: 없음(Unit).
+     * 역할: 저장 시각별 만료 여부를 확인할 모든 학교의 급식 캐시를 읽는다.
+     * 입력: 없음.
+     * 출력: 저장된 MealSnapshotEntity 목록.
      */
-    @Query("DELETE FROM meal_snapshots WHERE weekStart < :oldestWeek") suspend fun prune(oldestWeek: String)
+    @Query("SELECT * FROM meal_snapshots") suspend fun all(): List<MealSnapshotEntity>
+    /**
+     * 역할: 만료된 급식 캐시를 기본 키로 삭제한다.
+     * 입력: 삭제할 MealSnapshotEntity 목록.
+     * 출력: 삭제한 행 수.
+     */
+    @Delete suspend fun delete(snapshots: List<MealSnapshotEntity>): Int
 }
 
 val Migration1To2 = object : Migration(1, 2) {

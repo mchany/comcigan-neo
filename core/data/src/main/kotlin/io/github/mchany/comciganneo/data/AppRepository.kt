@@ -192,7 +192,6 @@ class AppRepository(context: Context, private val defaultNeisKey: String = "") {
         val snapshot = client.fetch(selection, week)
         database.snapshots().save(SnapshotEntity(selection.school.code, selection.grade, selection.classNumber,
             snapshot.weekStart, json.encodeToString(snapshot)))
-        database.snapshots().prune(weekStart(offset = -4).toString())
         cacheEvents.tryEmit(Unit)
         return snapshot
     }
@@ -248,9 +247,18 @@ class AppRepository(context: Context, private val defaultNeisKey: String = "") {
         currentCoroutineContext().ensureActive()
         val snapshot = MealSnapshot(school, week.toString(), System.currentTimeMillis(), meals)
         database.meals().save(MealSnapshotEntity(school.officeCode, school.schoolCode, week.toString(), json.encodeToString(snapshot)))
-        database.meals().prune(weekStart(offset = -4).toString())
         cacheEvents.tryEmit(Unit)
         snapshot
+    }
+    /**
+     * 역할: 저장 후 3개월이 지난 시간표와 급식 캐시를 삭제하고 변경을 알린다.
+     * 입력: 현재 시각의 epoch 밀리초 값이며 생략하면 시스템 현재 시각.
+     * 출력: 삭제한 캐시 행 수.
+     */
+    suspend fun deleteExpiredCache(now: Long = System.currentTimeMillis()): Int {
+        val deleted = database.deleteExpiredCache(now)
+        if (deleted > 0) cacheEvents.tryEmit(Unit)
+        return deleted
     }
     /**
      * 역할: 저장된 급식 자료를 비운다.

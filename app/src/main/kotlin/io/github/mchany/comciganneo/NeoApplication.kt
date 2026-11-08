@@ -4,6 +4,7 @@ import android.app.Application
 import android.app.WallpaperManager
 import android.os.Build
 import android.os.Handler
+import io.github.mchany.comciganneo.cache.CacheCleanupWorker
 import io.github.mchany.comciganneo.data.AppRepository
 import io.github.mchany.comciganneo.notifications.DailyNotificationScheduler
 import io.github.mchany.comciganneo.notifications.DailyNotificationPublisher
@@ -25,6 +26,7 @@ class NeoApplication : Application() {
      */
     override fun onCreate() {
         super.onCreate()
+        CacheCleanupWorker.schedule(this)
         DailyNotificationPublisher.createChannels(this)
         scope.launch { repository.preferences.collect { DailyNotificationScheduler(this@NeoApplication).synchronize(it) } }
         scope.launch {
