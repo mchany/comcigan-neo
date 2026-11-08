@@ -1,6 +1,14 @@
 name: Parser Health
 
-on: 
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - main
+    paths:
+      - 'core/comcigan/**'
+      - 'core/model/**'
+      - '.github/workflows/parser-health.yml'
   workflow_dispatch:
 
 permissions:
