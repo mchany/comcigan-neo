@@ -10,6 +10,7 @@ import java.util.Base64
 
 class StructureChanged(message: String, cause: Throwable? = null) : Exception(message, cause)
 class TimetableUnavailable : Exception("아직 게시된 시간표가 없어요.")
+class TimetablePeriodChanged : Exception("시간표 조회 기간이 변경됐어요. 새로고침해 주세요.")
 
 /** Page-issued request credential. Deliberately redacted from ServiceCodes and diagnostic strings. */
 class HourRequestToken private constructor(private val value: String) {
@@ -52,7 +53,11 @@ data class ServiceCodes(
     }
     fun timetablePath(schoolCode: Int, week: Int): String {
         require(week in 0..1)
-        val token = "${requestPrefix}_${schoolCode}_0_${week + 1}" +
+        return timetableRequestPath(schoolCode, week + 1)
+    }
+    fun timetableRequestPath(schoolCode: Int, request: Int): String {
+        require(request > 0)
+        val token = "${requestPrefix}_${schoolCode}_0_${request}" +
             if (responseKeyHex != null) "_$responseFormat" else ""
         return timetableRoute + Base64.getEncoder().encodeToString(token.toByteArray(Charsets.UTF_8))
     }
@@ -106,6 +111,7 @@ object ComciganParser {
             val data = objectFrom(text, codes)
             if (data.isEmpty() || data["시작일"] == null) throw TimetableUnavailable()
             val start = LocalDate.parse(data.getValue("시작일").jsonPrimitive.content)
+            val publishedWeeks = ComciganPublishedWeeks.parse(data, start)
             val counts = data.getValue("학급수").jsonArray.drop(1).map { it.jsonPrimitive.int }
             require(selection.grade <= counts.size && selection.classNumber <= counts[selection.grade - 1]) {
                 "선택한 학급을 찾을 수 없어요. 학년과 반을 다시 선택해 주세요."
@@ -168,7 +174,7 @@ object ComciganParser {
             }
             return TimetableSnapshot(selection, start.toString(),
                 data[codes.updatedField]?.jsonPrimitive?.contentOrNull,
-                fetchedAt, counts, slots)
+                fetchedAt, counts, slots, publishedWeeks = publishedWeeks)
         } catch (e: TimetableUnavailable) { throw e }
           catch (e: StructureChanged) { throw e }
           catch (e: IllegalArgumentException) { throw StructureChanged(e.message ?: "시간표 형식이 변경됐어요.", e) }

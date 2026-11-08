@@ -93,6 +93,7 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
         }
     }
     fun week(week: Int) {
+        require(week in 0..1)
         if (week == mutable.value.week) return
         mutable.update { it.copy(week = week) }; load()
     }
@@ -109,8 +110,7 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
             meal.snapshot?.isFresh(LocalDate.parse(meal.date)) != true) loadMeals()
         val snapshot = mutable.value.snapshot
         if (!mutable.value.loading && mutable.value.preferences.selection != null &&
-            (snapshot == null || snapshot.weekStart != weekStart(offset = mutable.value.week).toString() ||
-                System.currentTimeMillis() - snapshot.fetchedAt > 300_000)) load()
+            (snapshot == null || !snapshot.isFreshTimetable(mutable.value.week))) load()
     }
     private fun load(force: Boolean = false) {
         loadJob?.cancel()
@@ -121,7 +121,7 @@ class NeoViewModel(private val repository: AppRepository) : ViewModel() {
             try {
                 val cache = repository.cached(selection, week)
                 mutable.update { it.copy(snapshot = cache) }
-                if (!force && cache != null && System.currentTimeMillis() - cache.fetchedAt < 300_000) {
+                if (!force && cache?.isFreshTimetable(week) == true) {
                     mutable.update { it.copy(loading = false) }; return@launch
                 }
                 val snapshot = repository.refresh(selection, week)

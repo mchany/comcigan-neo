@@ -15,6 +15,8 @@ data class SnapshotEntity(
 
 @Dao
 interface SnapshotDao {
+    @Query("SELECT * FROM snapshots WHERE schoolCode = :school AND grade = :grade AND classNumber = :classNumber ORDER BY weekStart DESC LIMIT 16")
+    suspend fun forClass(school: Int, grade: Int, classNumber: Int): List<SnapshotEntity>
     @Query("SELECT * FROM snapshots WHERE schoolCode = :school AND grade = :grade AND classNumber = :classNumber AND weekStart = :week LIMIT 1")
     suspend fun find(school: Int, grade: Int, classNumber: Int, week: String): SnapshotEntity?
     @Insert(onConflict = OnConflictStrategy.REPLACE)

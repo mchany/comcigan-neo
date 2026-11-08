@@ -34,6 +34,9 @@ data class LessonSlot(
 )
 
 @Serializable
+data class PublishedTimetableWeek(val request: Int, val start: String)
+
+@Serializable
 data class TimetableSnapshot(
     val selection: ClassSelection,
     val weekStart: String,
@@ -42,6 +45,7 @@ data class TimetableSnapshot(
     val classCounts: List<Int>,
     val slots: List<LessonSlot>,
     val parserVersion: Int = 1,
+    val publishedWeeks: List<PublishedTimetableWeek> = emptyList(),
 )
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }

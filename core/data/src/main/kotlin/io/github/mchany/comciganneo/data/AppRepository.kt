@@ -106,8 +106,8 @@ class AppRepository(context: Context, private val defaultNeisKey: String = "") {
     suspend fun search(query: String): List<School> = client.searchSchools(query)
     suspend fun preview(school: School): TimetableSnapshot = client.fetch(ClassSelection(school, 1, 1), 0)
     suspend fun cached(selection: ClassSelection, week: Int): TimetableSnapshot? =
-        database.snapshots().find(selection.school.code, selection.grade, selection.classNumber, weekStart(offset = week).toString())
-            ?.let { runCatching { json.decodeFromString<TimetableSnapshot>(it.json) }.getOrNull() }
+        cachedTimetableSnapshot(database.snapshots().forClass(selection.school.code, selection.grade, selection.classNumber)
+            .mapNotNull { runCatching { json.decodeFromString<TimetableSnapshot>(it.json) }.getOrNull() }, selection, week)
     suspend fun refresh(selection: ClassSelection, week: Int): TimetableSnapshot {
         val snapshot = client.fetch(selection, week)
         database.snapshots().save(SnapshotEntity(selection.school.code, selection.grade, selection.classNumber,
