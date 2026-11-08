@@ -92,15 +92,22 @@ object WidgetRenderer {
         views.setTextViewText(R.id.widget_empty, empty.orEmpty())
         views.setViewVisibility(R.id.widget_empty, if (empty == null) View.GONE else View.VISIBLE)
         views.setViewVisibility(R.id.widget_body, if (empty == null) View.VISIBLE else View.GONE)
-        if (kind == WidgetKind.TIMETABLE) {
+        if (kind == WidgetKind.TIMETABLE && wide) {
             views.setViewVisibility(R.id.widget_focus_panel, if (empty == null) View.VISIBLE else View.GONE)
         }
         if (empty != null) return views
 
         when (kind) {
             WidgetKind.TIMETABLE -> {
-                bindTimetable(views, data, colors, height, context.resources.configuration.fontScale)
-                if (wide) WidgetCollection.bind(context, views, R.id.widget_list, id, kind, "all", data, colors)
+                if (wide) {
+                    bindTimetable(views, data, colors, height, context.resources.configuration.fontScale)
+                    WidgetCollection.bind(context, views, R.id.widget_list, id, kind, "all", data, colors)
+                } else {
+                    tintWidgetSurface(views, R.id.widget_compact_surface, R.id.widget_compact_background, colors.cardSurface) {
+                        colors.background(width - 16, height - 64, true)
+                    }
+                    WidgetCollection.bind(context, views, R.id.widget_list, id, kind, "all", data, colors, compact = true)
+                }
             }
             WidgetKind.MEALS -> if (wide) bindMeals(context, views, id, data, colors, width, height)
                 else WidgetCollection.bind(context, views, R.id.widget_list, id, kind, "all", data, colors)

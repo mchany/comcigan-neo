@@ -18,14 +18,14 @@ data class WidgetRow(val kicker: String = "", val title: String = "", val body: 
 
 /**
  * 역할: 자료와 위젯 종류에 맞는 행 목록을 구성한다.
- * 입력: data: WidgetData, kind: WidgetKind, section: String.
+ * 입력: 위젯 자료, 종류, 표시 구역, 2×2 시간표의 간결한 표시 여부.
  * 출력: List<WidgetRow> 값.
  */
-fun widgetRows(data: WidgetData, kind: WidgetKind, section: String = "all"): List<WidgetRow> = when (kind) {
+fun widgetRows(data: WidgetData, kind: WidgetKind, section: String = "all", compact: Boolean = false): List<WidgetRow> = when (kind) {
     WidgetKind.TIMETABLE -> data.lessons.map { slot -> WidgetRow(kicker = slot.period.toString(),
-        body = listOfNotNull(slot.current?.subject, slot.current?.teacher?.takeIf { data.preferences.showTeachers && it.isNotBlank() }).joinToString(" "),
+        body = listOfNotNull(slot.current?.subject, slot.current?.teacher?.takeIf { !compact && data.preferences.showTeachers && it.isNotBlank() }).joinToString(" "),
         meta = slot.startTime?.let { "$it 시작" }.orEmpty(), highlighted = slot.period == data.focus.lesson?.period,
-        secondary = slot.current?.teacher?.takeIf { data.preferences.showTeachers }.orEmpty()) }
+        secondary = slot.current?.teacher?.takeIf { !compact && data.preferences.showTeachers }.orEmpty()) }
     WidgetKind.MEALS -> if (section == "all") data.entries.map { meal -> WidgetRow(title = meal.typeName.ifBlank { meal.type.label }, body = meal.menu.filter { it.isNotBlank() }.joinToString("\n"), meta = meal.calories.orEmpty()) }
         else data.entries.firstOrNull { it.typeCode == section }?.menu.orEmpty().filter { it.isNotBlank() }.map { WidgetRow(body = it) }
 }
@@ -33,30 +33,33 @@ fun widgetRows(data: WidgetData, kind: WidgetKind, section: String = "all"): Lis
 internal object WidgetCollection {
     /**
      * 역할: 위젯 목록 뷰에 행 데이터와 색상을 연결한다.
-     * 입력: context: Context, views: RemoteViews, listId: Int, widgetId: Int, kind: WidgetKind, section: String, data: WidgetData, colors: WidgetColors.
+     * 입력: 컨텍스트, 원격 뷰와 목록 ID, 위젯 ID·종류·구역, 자료와 색상, 간결한 표시 여부.
      * 출력: 없음(Unit).
      */
-    fun bind(context: Context, views: RemoteViews, listId: Int, widgetId: Int, kind: WidgetKind, section: String, data: WidgetData, colors: WidgetColors) {
+    fun bind(context: Context, views: RemoteViews, listId: Int, widgetId: Int, kind: WidgetKind, section: String, data: WidgetData, colors: WidgetColors,
+        compact: Boolean = false) {
         views.setPendingIntentTemplate(listId, WidgetRenderer.openApp(context, kind, true))
         if (Build.VERSION.SDK_INT >= 31) {
             val items = RemoteViews.RemoteCollectionItems.Builder().setHasStableIds(true).setViewTypeCount(1)
-            widgetRows(data, kind, section).forEachIndexed { index, row -> items.addItem(index.toLong(), rowView(context, row, colors, kind, section)) }
+            widgetRows(data, kind, section, compact).forEachIndexed { index, row -> items.addItem(index.toLong(), rowView(context, row, colors, kind, section, compact)) }
             views.setRemoteAdapter(listId, items.build())
         } else {
             @Suppress("DEPRECATION")
             views.setRemoteAdapter(listId, Intent(context, WidgetListService::class.java)
-                .setData("comciganneo-widget://$widgetId/${kind.key}/$section".toUri())
-                .putExtra("kind", kind.name).putExtra("section", section))
+                .setData("comciganneo-widget://$widgetId/${kind.key}/$section${if (compact) "/compact" else ""}".toUri())
+                .putExtra("kind", kind.name).putExtra("section", section).putExtra("compact", compact))
         }
     }
 
     /**
      * 역할: 위젯 행 데이터에서 원격 뷰를 만든다.
-     * 입력: context: Context, row: WidgetRow, colors: WidgetColors, kind: WidgetKind, section: String.
+     * 입력: 컨텍스트, 행 자료, 위젯 색상·종류·구역, 간결한 표시 여부.
      * 출력: RemoteViews 값.
      */
-    fun rowView(context: Context, row: WidgetRow, colors: WidgetColors, kind: WidgetKind, section: String): RemoteViews {
-        val layout = if (kind == WidgetKind.TIMETABLE) R.layout.widget_timetable_row_m3
+    fun rowView(context: Context, row: WidgetRow, colors: WidgetColors, kind: WidgetKind, section: String, compact: Boolean = false): RemoteViews {
+        val layout = if (kind == WidgetKind.TIMETABLE) {
+            if (compact) R.layout.widget_timetable_compact_row_m3 else R.layout.widget_timetable_row_m3
+        }
             else if (section == "all") R.layout.widget_meal_card_m3 else R.layout.widget_menu_line_m3
         return RemoteViews(context.packageName, layout).apply {
             val textColor = if (row.highlighted) colors.onContainer else colors.ink

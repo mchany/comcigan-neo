@@ -4,8 +4,8 @@ import android.appwidget.*
 import android.content.ComponentName
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Rect
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.SizeF
@@ -103,7 +103,7 @@ class WidgetHostTest {
         putParcelableArrayList(AppWidgetManager.OPTION_APPWIDGET_SIZES, arrayListOf(SizeF(width.toFloat(), height.toFloat())))
     }
     /**
-     * 역할: 테스트 시나리오의 기대 결과를 검증한다.
+     * 역할: 실제 호스트에서 2×2 전체 시간표와 가로형·급식 위젯의 크기, 색상, 자료 연결을 검증한다.
      * 입력: 없음.
      * 출력: 없음(Unit).
      */
@@ -168,13 +168,22 @@ class WidgetHostTest {
                 views.indices.forEach { index -> views[index].updateAppWidget(WidgetRenderer.responsive(context, ids[index],
                     if (index == 0 || index == 2) WidgetKind.TIMETABLE else WidgetKind.MEALS, manager.getAppWidgetOptions(ids[index]), demo)) }
             }
-            eventually { var found = false; main { found = texts(views[0]).any { it.contains("4교시") } && texts(views[3]).any { it.contains("점심검증밥") } }; found }
+            eventually { var found = false; main { found = views[0].findViewById<ListView>(R.id.widget_list)?.adapter?.count == 7 && texts(views[3]).any { it.contains("점심검증밥") } }; found }
             main {
-                val following = views[0].findViewById<TextView>(R.id.widget_following)
-                val rect = Rect()
-                assertTrue("Following lesson remains fully visible", following.getGlobalVisibleRect(rect) && rect.height() >= following.height)
+                val compactList = views[0].findViewById<ListView>(R.id.widget_list)
+                assertEquals("All periods start in view in the compact widget", 0, compactList.firstVisiblePosition)
+                assertEquals("All seven periods fit the compact widget", 6, compactList.lastVisiblePosition)
+                assertFalse("Compact rows prioritize subjects", texts(views[0]).any { it.contains("김선생") })
             }
             val directory = File(context.getExternalFilesDir(null), "debug-screenshots").apply { mkdirs() }
+            main {
+                views.forEachIndexed { index, view ->
+                    val capture = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+                    view.draw(Canvas(capture))
+                    File(directory, "widgets-native-$index.png").outputStream().use { capture.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    capture.recycle()
+                }
+            }
             SystemClock.sleep(300)
             val bitmap = checkNotNull(instrumentation.uiAutomation.takeScreenshot())
             File(directory, "widgets-showcase.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()

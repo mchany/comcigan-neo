@@ -19,6 +19,7 @@ class WidgetListService : RemoteViewsService() {
     private inner class Factory(intent: Intent) : RemoteViewsFactory {
         private val kind = WidgetKind.entries.firstOrNull { it.name == intent.getStringExtra("kind") } ?: WidgetKind.TIMETABLE
         private val section = intent.getStringExtra("section") ?: "all"
+        private val compact = intent.getBooleanExtra("compact", false)
         private var rows = emptyList<WidgetRow>()
         private var colors: WidgetColors? = null
         /**
@@ -40,7 +41,7 @@ class WidgetListService : RemoteViewsService() {
          */
         override fun onDataSetChanged() = runBlocking(Dispatchers.IO) {
             val data = WidgetData.load(applicationContext)
-            rows = widgetRows(data, kind, section)
+            rows = widgetRows(data, kind, section, compact)
             colors = WidgetColors.resolve(applicationContext, data.preferences)
         }
         /**
@@ -54,7 +55,7 @@ class WidgetListService : RemoteViewsService() {
          * 입력: position: Int.
          * 출력: RemoteViews? 값.
          */
-        override fun getViewAt(position: Int): RemoteViews? = rows.getOrNull(position)?.let { row -> colors?.let { WidgetCollection.rowView(applicationContext, row, it, kind, section) } }
+        override fun getViewAt(position: Int): RemoteViews? = rows.getOrNull(position)?.let { row -> colors?.let { WidgetCollection.rowView(applicationContext, row, it, kind, section, compact) } }
         /**
          * 역할: 목록 자료를 불러오는 동안 사용할 로딩 화면을 반환한다.
          * 입력: 없음.
