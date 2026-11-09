@@ -1,5 +1,8 @@
 name: Parser Health
 
+run-name: >-
+  Parser Health / ${{ github.event_name == 'pull_request' && 'PR 실행' || inputs.source == 'scheduler' && format('Cloudflare 예약 실행 ({0})', inputs.scheduled_time) || '직접 실행' }}
+
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -10,6 +13,19 @@ on:
       - 'core/model/**'
       - '.github/workflows/parser-health.yml'
   workflow_dispatch:
+    inputs:
+      source:
+        description: 실행 출처
+        type: choice
+        options:
+          - manual
+          - scheduler
+        default: manual
+        required: true
+      scheduled_time:
+        description: Cloudflare 예약 실행 시각
+        type: string
+        required: false
 
 permissions:
   contents: read
