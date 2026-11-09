@@ -3,7 +3,27 @@ name: Android
 on:
   push:
     branches: [main]
+    paths:
+      - 'app/**'
+      - 'core/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradle/**'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'buildSrc/**'
   pull_request:
+    paths:
+      - 'app/**'
+      - 'core/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradle/**'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'buildSrc/**'
   workflow_dispatch:
 
 permissions:
