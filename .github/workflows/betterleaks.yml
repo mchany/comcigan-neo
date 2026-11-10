@@ -1,0 +1,47 @@
+
+name: Betterleaks Security Scan
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: betterleaks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && 0 || 1 }}
+          persist-credentials: false
+
+      - name: Scan current files
+        if: github.event_name != 'workflow_dispatch'
+        run: |
+          docker run --rm \
+            --network none \
+            --mount type=bind,source="$GITHUB_WORKSPACE",target=/repo,readonly \
+            --workdir /repo \
+            ghcr.io/betterleaks/betterleaks:v2 \
+            fs . --redact
+
+      - name: Scan full Git history
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          docker run --rm \
+            --network none \
+            --mount type=bind,source="$GITHUB_WORKSPACE",target=/repo,readonly \
+            --workdir /repo \
+            ghcr.io/betterleaks/betterleaks:v2 \
+            git . --redact --include=merges
