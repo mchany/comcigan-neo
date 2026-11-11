@@ -1,5 +1,6 @@
-# 컴시간neo
+![아이콘](https://github.com/mchany/comcigan-neo/blob/BetterLeaks-in-PR-test/comcigan-neo-icon.svg)
 
+# 컴시간neo
 
 [![Build Status](https://img.shields.io/github/actions/workflow/status/mchany/comcigan-neo/android.yml?branch=main&style=flat-square&label=Build%20Status)](https://github.com/mchany/comcigan-neo/actions/workflows/android.yml)
 [![Parser Health](https://img.shields.io/github/actions/workflow/status/mchany/comcigan-neo/parser-health.yml?branch=main&style=flat-square&label=Parser%20Health)](https://github.com/mchany/comcigan-neo/actions/workflows/parser-health.yml)

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
+  <defs>
+    <clipPath id="galaxy-launcher-mask">
+      <path d="M54 0C98 0 108 10 108 54C108 98 98 108 54 108C10 108 0 98 0 54C0 10 10 0 54 0Z"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#galaxy-launcher-mask)">
+    <path fill="#D3EDE1" d="M0 0h108v108H0z"/>
+    <path fill="#225448" d="M28 28h52v52H28z"/>
+    <path fill="#D3EDE1" d="M36 36h14v14H36z M58 36h14v14H58z M36 58h14v14H36z"/>
+    <path fill="#FFFFFF" d="M58 58h14v14H58z"/>
+  </g>
+</svg>
