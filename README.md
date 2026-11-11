@@ -1,9 +1,15 @@
-![아이콘](https://github.com/mchany/comcigan-neo/blob/main/comcigan-neo-icon.svg)
+<p align="center">
+  <img src="https://github.com/mchany/comcigan-neo/blob/main/comcigan-neo-icon.svg" alt="아이콘">
+</p>
 
-# 컴시간neo
+# <p align="center">컴시간neo</p>
 
-[![Build Status](https://img.shields.io/github/actions/workflow/status/mchany/comcigan-neo/android.yml?branch=main&style=flat-square&label=Build%20Status)](https://github.com/mchany/comcigan-neo/actions/workflows/android.yml)
-[![Parser Health](https://img.shields.io/github/actions/workflow/status/mchany/comcigan-neo/parser-health.yml?branch=main&style=flat-square&label=Parser%20Health)](https://github.com/mchany/comcigan-neo/actions/workflows/parser-health.yml)
+<div align="center">
+  
+  [![Build Status](https://img.shields.io/github/actions/workflow/status/mchany/comcigan-neo/android.yml?branch=main&style=flat-square&label=Build%20Status)](https://github.com/mchany/comcigan-neo/actions/workflows/android.yml)
+  [![Parser Health](https://img.shields.io/github/actions/workflow/status/mchany/comcigan-neo/parser-health.yml?branch=main&style=flat-square&label=Parser%20Health)](https://github.com/mchany/comcigan-neo/actions/workflows/parser-health.yml)
+
+</div>
 
 Kotlin과 Jetpack Compose Material 3로 제작한 컴시간알리미 비공식 오픈소스 Android 클라이언트입니다.
 
