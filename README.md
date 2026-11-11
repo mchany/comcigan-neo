@@ -1,4 +1,4 @@
-![아이콘](https://github.com/mchany/comcigan-neo/blob/BetterLeaks-in-PR-test/comcigan-neo-icon.svg)
+![아이콘](https://github.com/mchany/comcigan-neo/blob/main/comcigan-neo-icon.svg)
 
 # 컴시간neo
 
