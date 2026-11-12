@@ -180,15 +180,14 @@ function makeNotes({metadata, apk, evidence, output, sha, repo, runUrl}) {
   fs.writeFileSync(path.join(output, 'release-notes.md'), notes);
   return meta;
 }
-/** 역할: Draft 첨부의 원격 바이트를 검증한 뒤 공개한다. 입력: Actions 도구·버전·산출물 폴더와 복구 시 기존 태그 필수 옵션. 출력: 공개 URL 또는 검증 오류. */
-async function publish({github, context, core, metadata, directory, requireExistingTag = false}) {
+/** 역할: Draft 첨부의 원격 바이트를 검증한 뒤 공개한다. 입력: Actions 도구·버전·산출물 폴더. 출력: 공개 URL 또는 검증 오류. */
+async function publish({github, context, core, metadata, directory}) {
   identity(context); validateMetadata(metadata);
   const meta = JSON.parse(fs.readFileSync(path.join(directory, 'release-metadata.json'), 'utf8'));
   if (meta.source_sha !== context.sha || meta.repository !== REPO || meta.version !== metadata.version || meta.version_code !== metadata.version_code) throw new Error('산출물과 배포 입력이 다릅니다.');
   const name = `comcigan-neo-${metadata.version}.apk`;
   if (meta.apk_name !== name || digest(path.join(directory, name)) !== meta.apk_sha256 || fs.readFileSync(path.join(directory, 'SHA256SUMS.txt'), 'utf8') !== `${meta.apk_sha256}  ${name}\n`) throw new Error('APK 무결성 검증에 실패했습니다.');
   const tag = `v${metadata.version}`, target = await tagSha(github, context, tag);
-  if (requireExistingTag && !target) throw new Error('복구 대상의 기존 태그가 사라졌습니다. 태그를 생성하지 않습니다.');
   if (target && target !== context.sha) throw new Error('다른 소스의 기존 태그는 변경하지 않습니다.');
   await validateLatest(github, context, metadata);
   if (!target) await call(github, context, 'POST /repos/{owner}/{repo}/git/refs', {ref: `refs/tags/${tag}`, sha: context.sha});

@@ -256,13 +256,3 @@ test('draft deleted before verification fails explicitly without publication', a
   await assert.rejects(() => release.publish({github, context, core: coreFixture(), metadata, directory: folder}), /404/);
   assert.ok(github.calls.every(([route]) => route.startsWith('GET ')));
 }));
-// 역할: 복구 검증 후 태그가 사라져도 새 태그를 생성하지 않는다. 입력: 기존 태그가 없는 복구 요청. 출력: 읽기 조회 후 중단.
-test('recovery publication refuses to recreate a deleted source tag', async () => temporary(async (folder) => {
-  draftFiles(folder);
-  const github = apiFixture((route) => {
-    if (route.includes('/git/ref/')) { const error = new Error(); error.status = 404; throw error; }
-    throw new Error('Unexpected API after missing source tag');
-  });
-  await assert.rejects(() => release.publish({github, context, core: coreFixture(), metadata, directory: folder, requireExistingTag: true}), /기존 태그/);
-  assert.equal(github.calls.length, 1);
-}));
