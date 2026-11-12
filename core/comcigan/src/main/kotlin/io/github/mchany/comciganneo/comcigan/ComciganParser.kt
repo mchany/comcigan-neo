@@ -41,6 +41,7 @@ data class ServiceCodes(
     val responseFormat: String = "enc2",
     val encodedSchoolSearch: Boolean = false,
     val requestToken: HourRequestToken? = null,
+    val textFields: EncodedTextFields? = null,
 ) {
     val timetableRoute: String get() = searchRoute.substringBefore('?') + "?"
     /**
@@ -113,8 +114,13 @@ object ComciganParser {
             ?: throw StructureChanged("학교 검색 응답 형식이 변경됐어요.")
         items.mapNotNull { item ->
             val row = item.jsonArray
+            val fields = codes?.textFields
+            val footer = if (row.size == 4 && row[0].jsonPrimitive.longOrNull == 0L) row[3].let { value ->
+                if (fields != null && value is JsonPrimitive && value.isString) fields.decode(value).toIntOrNull()
+                else (value as? JsonPrimitive)?.intOrNull
+            } else null
             // This footer is not a school. Its selector would otherwise point at the message in row[2].
-            if (row.size == 4 && row[0].jsonPrimitive.longOrNull == 0L && row[3].jsonPrimitive.intOrNull == 0) {
+            if (row.size == 4 && row[0].jsonPrimitive.longOrNull == 0L && footer == 0) {
                 return@mapNotNull null
             }
             val index = codes?.schoolCodeDivisor?.let { divisor ->
@@ -124,9 +130,13 @@ object ComciganParser {
                 if (selected < 0 || selected >= row.size) throw StructureChanged("학교 코드 위치를 읽을 수 없어요.")
                 selected.toInt()
             } ?: 3
-            val code = row.getOrNull(index)?.jsonPrimitive?.intOrNull
+            val rawCode = row.getOrNull(index)?.jsonPrimitive
+            val code = (if (fields != null && rawCode?.isString == true) fields.decode(rawCode)
+                .takeIf { it.matches(Regex("[0-9]+")) }?.toIntOrNull() else rawCode?.intOrNull)
                 ?: if (codes?.responseKeyHex != null) throw StructureChanged("학교 코드를 읽을 수 없어요.") else return@mapNotNull null
-            if (code == 0) null else School(code, row[2].jsonPrimitive.content, row[1].jsonPrimitive.content)
+            if (code <= 0) null else School(code,
+                fields?.decode(row[2]) ?: row[2].jsonPrimitive.content,
+                fields?.decode(row[1]) ?: row[1].jsonPrimitive.content)
         }.distinctBy { it.code }
     } catch (e: StructureChanged) { throw e }
       catch (e: Exception) { throw StructureChanged("학교 검색 응답 형식이 변경됐어요.", e) }
@@ -138,7 +148,8 @@ object ComciganParser {
      */
     fun timetable(text: String, codes: ServiceCodes, selection: ClassSelection, fetchedAt: Long): TimetableSnapshot {
         try {
-            val data = objectFrom(text, codes)
+            val authenticated = objectFrom(text, codes)
+            val data = codes.textFields?.normalize(authenticated, codes) ?: authenticated
             if (data.isEmpty() || data["시작일"] == null) throw TimetableUnavailable()
             val start = LocalDate.parse(data.getValue("시작일").jsonPrimitive.content)
             val publishedWeeks = ComciganPublishedWeeks.parse(data, start)
@@ -153,8 +164,9 @@ object ComciganParser {
             val divisor = data["분리"]?.jsonPrimitive?.content?.toIntOrNull() ?: 100
             require(divisor > 0)
             val notifications = data["변경알림"]?.jsonPrimitive?.content == "1"
-            val starts = data["일과시간"]?.jsonArray?.mapNotNull {
-                val value = it.jsonPrimitive.content
+            val starts = data["일과시간"]?.jsonArray?.mapIndexedNotNull { index, element ->
+                val value = element.jsonPrimitive.content
+                if (Regex("""^\d{1,2}:\d{2}$""").matches(value)) return@mapIndexedNotNull (index + 1) to value.padStart(5, '0')
                 Regex("""^(\d+)\((\d{1,2}:\d{2})""").find(value)?.let { match ->
                     match.groupValues[1].toInt() to match.groupValues[2].padStart(5, '0')
                 }

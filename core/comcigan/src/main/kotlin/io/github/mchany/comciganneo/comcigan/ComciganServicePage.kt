@@ -127,10 +127,11 @@ internal object ComciganServicePage {
             capture("요청 코드", """sc_data\(\s*'(\d+)_"""),
             "자료" + capture("교사", """성명\s*=\s*(?:Q성명\(\s*)?자료\.자료(\d+)"""),
             "자료" + capture("과목", """자료\.자료(\d+)\[sb\]"""),
-            "자료" + capture("갱신 시각", """=\s*H시간표\.자료(\d+)"""),
+            "자료" + capture("갱신 시각", """=\s*(?:QnmsbChange\(\s*)?H시간표\.자료(\d+)"""),
             "자료" + capture("현재 시간표", """일일자료\s*=\s*Q자료\(\s*자료\.자료(\d+)"""),
             "자료" + capture("원본 시간표", """원자료\s*=\s*Q자료\(\s*자료\.자료(\d+)"""),
             responseKey, divisor, offset, if (encodedSearch) "enc5" else "enc2", encodedSearch, token,
+            EncodedTextFields.parse(source),
         )
     }
 }
