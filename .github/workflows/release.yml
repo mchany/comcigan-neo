@@ -208,7 +208,6 @@ jobs:
     if: >-
       always() && !cancelled() && github.repository == 'mchany/comcigan-neo' && github.ref == 'refs/heads/main' &&
       (needs.publish.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.operation == 'sync-readme'))
-    environment: release-readme
     permissions:
       contents: write
     runs-on: ubuntu-latest
