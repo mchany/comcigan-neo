@@ -3,6 +3,7 @@ on:
   workflow_dispatch:
   workflow_run:
     workflows: [Android, Release configuration, Betterleaks Security Scan]
+    branches: [codex/readme-release-sync]
     types: [completed]
 permissions:
   contents: read

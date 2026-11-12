@@ -110,6 +110,8 @@ README PR 생성 직후에는 CI가 아직 등록되지 않았거나 병합 가�
 
 **Finish README sync**는 Android·Release configuration·Betterleaks 실행이 완료되면 후속 검사를 한다. main의 신뢰된 코드만 실행하고 PR 브랜치의 코드를 checkout하거나 실행하지 않는다.
 
+완료 이벤트는 `codex/readme-release-sync` 브랜치로 제한한다. main이나 일반 기능 PR의 CI 완료로는 후속 Workflow 실행을 생성하지 않는다.
+
 - 읽기 전용 GITHUB_TOKEN으로 같은 HEAD의 build·check·Secret Scan 성공과 나머지 CI·상태 검사를 확인한다.
 - 수정 파일이 README 하나인지, 본문이 최신 main과 공개 릴리즈에서 생성한 내용과 정확히 일치하는지 확인한다.
 - CI가 모두 성공한 경우에만 병합 상태를 최대 4회·1초 간격으로 재조회한다. 준비가 끝나면 기존 App 설치 토큰을 만들고 HEAD·릴리즈·본문을 다시 확인해 SHA 조건부 squash 병합한다.
