@@ -18,7 +18,7 @@ on:
           - sync-readme
   workflow_run:
     workflows: [Release, Android, Betterleaks Security Scan]
-    branches: [codex/readme-release-sync]
+    branches: [main]
     types: [completed]
 permissions:
   contents: read
