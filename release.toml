@@ -1,5 +1,5 @@
 [release]
-version = "1.1.1"
+version = "1.1.2"
 version_code = 18
 summary = "컴시간의 QnmsbChange 문자열 인코딩 도입과 시작일·일과시간 필드 이동으로 인한 학교·시간표 조회 실패 해결"
 changes = [
