@@ -1,0 +1,99 @@
+name: Recover Release
+run-name: Recover release / ${{ inputs.run_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Original Release workflow run ID with successful sign job
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: release-production
+  cancel-in-progress: false
+jobs:
+  recover:
+    if: github.repository == 'mchany/comcigan-neo' && github.ref == 'refs/heads/main'
+    environment: release-publishing
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        id: source
+        env:
+          ORIGINAL_RUN_ID: ${{ inputs.run_id }}
+        with:
+          script: await require('./tools/recovery.cjs').getRecoverySource({github, context, core, runId:process.env.ORIGINAL_RUN_ID});
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: signed-release
+          path: signed
+          run-id: ${{ steps.source.outputs.run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        name: Verify original tag and preserve original metadata
+        env:
+          ORIGINAL_SHA: ${{ steps.source.outputs.sha }}
+          ORIGINAL_RUN_URL: ${{ steps.source.outputs.run_url }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const metadata = JSON.parse(fs.readFileSync('signed/release.json', 'utf8'));
+            const evidence = JSON.parse(fs.readFileSync('signed/evidence.json', 'utf8'));
+            await require('./tools/recovery.cjs').verifyRecoveryTag({github, context, metadata, sha:process.env.ORIGINAL_SHA});
+            require('./tools/release.cjs').makeNotes({metadata, apk:'signed/app-release.apk', evidence, output:'dist', sha:process.env.ORIGINAL_SHA, repo:context.repo.owner + '/' + context.repo.repo, runUrl:process.env.ORIGINAL_RUN_URL});
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        id: app
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: comcigan-neo
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        name: Pause previous README auto-merge
+        with:
+          github-token: ${{ steps.app.outputs.token }}
+          script: await require('./tools/release.cjs').pauseReadme({github, context});
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        name: Resume verified original release without rebuilding
+        env:
+          ORIGINAL_SHA: ${{ steps.source.outputs.sha }}
+        with:
+          script: |
+            const metadata = JSON.parse(require('node:fs').readFileSync('signed/release.json', 'utf8'));
+            const sourceContext = {...context, repo:context.repo, sha:process.env.ORIGINAL_SHA};
+            await require('./tools/release.cjs').publish({github, context:sourceContext, core, metadata, directory:'dist', requireExistingTag:true});
+  readme:
+    needs: recover
+    environment: release-readme
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        id: app
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: comcigan-neo
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          github-token: ${{ steps.app.outputs.token }}
+          script: await require('./tools/release.cjs').readme({github, context, core});

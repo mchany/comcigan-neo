@@ -87,7 +87,7 @@ test('published release is immutable and identical rerun is a no-op', async () =
   const item = {id: 1, tag_name: 'v1.1.1', draft: false, assets: names.map((name, id) => ({name, id})), html_url: 'https://github.com/mchany/comcigan-neo/releases/tag/v1.1.1'};
   const github = apiFixture((route, args) => {
     if (route.includes('/git/ref/')) return {object: {type: 'commit', sha: SHA}};
-    if (route.includes('/releases/latest') || route.includes('/releases/tags/')) return item;
+    if (route.includes('/releases/latest') || route.includes('/releases/tags/') || route === 'GET /repos/{owner}/{repo}/releases/{release_id}') return item;
     if (route.includes('/releases/assets/')) return fs.readFileSync(path.join(folder, names[args.asset_id]));
     throw new Error(route);
   });
@@ -112,7 +112,9 @@ test('draft assets upload to uploads host and are checked before publication', a
     if (route.includes('/git/ref/')) { if (target) return {object: {type: 'commit', sha: target}}; const e = new Error(); e.status = 404; throw e; }
     if (route === 'POST /repos/{owner}/{repo}/git/refs') { target = args.sha; return {}; }
     if (route.includes('/releases/latest')) return {tag_name: 'v1.1.0', assets: []};
-    if (route.includes('/releases/tags/')) { if (item) return item; const e = new Error(); e.status = 404; throw e; }
+    if (route.includes('/releases/tags/')) { const e = new Error(); e.status = 404; throw e; }
+    if (route === 'GET /repos/{owner}/{repo}/releases') return item ? [item] : [];
+    if (route === 'GET /repos/{owner}/{repo}/releases/{release_id}') return item;
     if (route === 'POST /repos/{owner}/{repo}/releases') return (item = {id: 1, draft: true, tag_name: args.tag_name, assets: [], html_url: 'release-url'});
     if (route === 'POST https://uploads.github.com/repos/{owner}/{repo}/releases/{release_id}/assets{?name}') { const id = bytes.size; bytes.set(id, args.data); item.assets.push({id, name: args.name}); return {}; }
     if (route === 'GET /repos/{owner}/{repo}/releases/assets/{asset_id}') return Uint8Array.from(bytes.get(args.asset_id)).buffer;
@@ -195,3 +197,72 @@ test('blocked README PR does not bypass protections after auto merge failure', a
   assert.equal(github.calls.some(([route]) => route.startsWith('PUT ')), false);
   assert.equal(core.outputs.readme_status, undefined);
 });
+
+/** 역할: 태그 조회가 Draft를 숨기는 API를 모사한다. 입력: 산출물·변조 옵션. 출력: 기존 Draft와 API 호출 기록. */
+function existingDraftFixture(folder, options = {}) {
+  const names = ['comcigan-neo-1.1.1.apk', 'SHA256SUMS.txt', 'release-metadata.json'];
+  const item = {id: 42, tag_name: 'v1.1.1', draft: true, assets: names.map((name, id) => ({name, id})), html_url: 'draft-url'};
+  const github = apiFixture((route, args) => {
+    if (route.includes('/git/ref/')) return {object: {type: 'commit', sha: SHA}};
+    if (route.includes('/releases/latest')) return {tag_name: 'v1.1.0', assets: []};
+    if (route.includes('/releases/tags/')) { const error = new Error(); error.status = 404; throw error; }
+    if (route === 'GET /repos/{owner}/{repo}/releases') {
+      if (args.page === 1) return Array.from({length: 100}, (_, id) => ({id, tag_name: 'v1.0.5', draft: false}));
+      return options.duplicate ? [item, {...item, id: 43}] : [item];
+    }
+    if (route === 'GET /repos/{owner}/{repo}/releases/{release_id}') {
+      assert.equal(args.release_id, 42);
+      if (options.deleted) { const error = new Error(); error.status = 404; throw error; }
+      return item;
+    }
+    if (route.includes('/releases/assets/')) return options.corrupt && args.asset_id === 0 ? Buffer.from('wrong APK') : fs.readFileSync(path.join(folder, names[args.asset_id]));
+    if (route === 'PATCH /repos/{owner}/{repo}/releases/{release_id}') { item.draft = false; return item; }
+    throw new Error('Unexpected write or request: ' + route);
+  });
+  return {github, item};
+}
+/** 역할: 합성 릴리즈 산출물을 생성한다. 입력: 임시 폴더. 출력: 검증된 파일 세트. */
+function draftFiles(folder) {
+  const apk = path.join(folder, 'input.apk'); fs.writeFileSync(apk, 'synthetic APK');
+  release.makeNotes({metadata, apk, evidence: {checks: ['검증'], certificate_sha256: 'f'.repeat(64)}, output: folder, sha: SHA, repo: 'mchany/comcigan-neo'});
+}
+// 역할: 목록의 다음 페이지에 있는 기존 Draft를 복구한다. 입력: 태그 404와 기존 첨부. 출력: 재생성·재업로드 없는 공개.
+test('existing draft is resumed by ID without recreating or replacing assets', async () => temporary(async (folder) => {
+  draftFiles(folder);
+  const {github, item} = existingDraftFixture(folder);
+  await release.publish({github, context, core: coreFixture(), metadata, directory: folder});
+  assert.equal(item.draft, false);
+  assert.ok(github.calls.some(([route, args]) => route === 'GET /repos/{owner}/{repo}/releases' && args.page === 2));
+  assert.ok(github.calls.every(([route]) => !route.startsWith('POST ')));
+}));
+// 역할: 기존 Draft APK의 바이트가 다르면 덮어쓰지 않는다. 입력: 변조한 원격 첨부. 출력: 공개·쓰기 없이 거부.
+test('existing draft with different APK bytes fails without writes', async () => temporary(async (folder) => {
+  draftFiles(folder);
+  const {github} = existingDraftFixture(folder, {corrupt: true});
+  await assert.rejects(() => release.publish({github, context, core: coreFixture(), metadata, directory: folder}), /덮어쓰지/);
+  assert.ok(github.calls.every(([route]) => route.startsWith('GET ')));
+}));
+// 역할: 같은 태그의 여러 Draft 중 임의로 하나를 선택하지 않는다. 입력: 중복 Draft. 출력: 쓰기 없이 거부.
+test('duplicate drafts fail without selecting an arbitrary release', async () => temporary(async (folder) => {
+  draftFiles(folder);
+  const {github} = existingDraftFixture(folder, {duplicate: true});
+  await assert.rejects(() => release.publish({github, context, core: coreFixture(), metadata, directory: folder}), /여러 개/);
+  assert.ok(github.calls.every(([route]) => route.startsWith('GET ')));
+}));
+// 역할: 업로드 후 Draft 삭제를 null 역참조 대신 명시적 오류로 처리한다. 입력: ID 조회 404. 출력: 공개하지 않고 중단.
+test('draft deleted before verification fails explicitly without publication', async () => temporary(async (folder) => {
+  draftFiles(folder);
+  const {github} = existingDraftFixture(folder, {deleted: true});
+  await assert.rejects(() => release.publish({github, context, core: coreFixture(), metadata, directory: folder}), /404/);
+  assert.ok(github.calls.every(([route]) => route.startsWith('GET ')));
+}));
+// 역할: 복구 검증 후 태그가 사라져도 새 태그를 생성하지 않는다. 입력: 기존 태그가 없는 복구 요청. 출력: 읽기 조회 후 중단.
+test('recovery publication refuses to recreate a deleted source tag', async () => temporary(async (folder) => {
+  draftFiles(folder);
+  const github = apiFixture((route) => {
+    if (route.includes('/git/ref/')) { const error = new Error(); error.status = 404; throw error; }
+    throw new Error('Unexpected API after missing source tag');
+  });
+  await assert.rejects(() => release.publish({github, context, core: coreFixture(), metadata, directory: folder, requireExistingTag: true}), /기존 태그/);
+  assert.equal(github.calls.length, 1);
+}));
