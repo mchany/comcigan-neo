@@ -96,12 +96,6 @@ test('published release is immutable and identical rerun is a no-op', async () =
   fs.writeFileSync(path.join(folder, meta.apk_name), 'changed');
   await assert.rejects(() => release.publish({github, context, core: coreFixture(), metadata, directory: folder}), /무결성/);
 }));
-// 역할: 새 공개 전에 이전 PR의 자동 병합을 멈춘다. 입력: 자동 병합 대기 PR. 출력: 해제 mutation.
-test('pause uses GraphQL to disable existing README auto merge', async () => {
-  const github = apiFixture(() => [{number: 25, node_id: 'PR_node', auto_merge: {enabled_by: {}}}]);
-  await release.pauseReadme({github, context});
-  assert.ok(github.calls.some(([route]) => route.includes('disablePullRequestAutoMerge')));
-});
 // 역할: Draft 업로드와 원격 검증을 거친 후에만 공개한다. 입력: 합성 Draft API. 출력: 올바른 업로드 호스트와 마지막 공개 요청.
 test('draft assets upload to uploads host and are checked before publication', async () => temporary(async (folder) => {
   const apk = path.join(folder, 'input.apk'); fs.writeFileSync(apk, 'apk');
@@ -126,77 +120,77 @@ test('draft assets upload to uploads host and are checked before publication', a
   assert.equal(core.outputs.release_url, 'release-url');
   assert.equal(github.calls.at(-1)[0], 'PATCH /repos/{owner}/{repo}/releases/{release_id}');
 }));
-// 역할: 최신 공개 버전과 다른 README PR을 거부한다. 입력: 최신 메타데이터와 과거 본문. 출력: 오류 또는 정상 검사.
-test('README PR check compares latest public release', async () => {
+/** 역할: main README 직접 반영 API를 모사한다. 입력: 충돌·릴리즈 교체 옵션. 출력: API와 출력 수집기. */
+function directReadmeFixture(options = {}) {
   const meta = {...metadata, repository: 'mchany/comcigan-neo'};
-  const github = apiFixture((route) => route.includes('/releases/latest') ? {id: 1, tag_name: 'v1.1.1', assets: [{id: 1, name: 'release-metadata.json'}]} : Buffer.from(JSON.stringify(meta)));
-  const text = '<!-- release:start -->old<!-- release:end -->';
-  await assert.rejects(() => release.checkReadme({github, context, text}), /최신 공개/);
-  await release.checkReadme({github, context, text: release.renderReadme(text, meta)});
-});
-// 역할: main 경합 시 최신 사용자 본문을 보존하고 실제 PR 병합 대기를 알린다. 입력: 바뀌는 main과 미병합 PR. 출력: pending.
-test('README updates preserve changed main and report pending rather than completion', async () => {
-  const meta = {...metadata, repository: 'mchany/comcigan-neo'};
-  let mainReads = 0;
-  const trees = [];
+  const original = '사용자 본문\n<!-- release:start -->old<!-- release:end -->\n끝';
   const core = coreFixture();
+  let reads = 0, writes = 0, latestReads = 0;
   const github = apiFixture((route, args) => {
-    if (route.includes('/releases/latest')) return {id: 1, tag_name: 'v1.1.1', assets: [{id: 1, name: 'release-metadata.json'}]};
+    if (route.endsWith('/releases/latest')) return {id: options.newRelease && ++latestReads > 1 ? 2 : 1, tag_name: 'v1.1.1', assets: [{id: 1, name: 'release-metadata.json'}]};
     if (route.includes('/releases/assets/')) return Buffer.from(JSON.stringify(meta));
-    if (route === 'GET /repos/{owner}/{repo}/git/ref/{ref}') return {object: {sha: args.ref === 'heads/main' ? (++mainReads === 1 ? 'a'.repeat(40) : 'b'.repeat(40)) : 'c'.repeat(40)}};
-    if (route.includes('/contents/')) return {content: Buffer.from('앞<!-- release:start -->old<!-- release:end -->동시 수정 보존').toString('base64')};
-    if (route === 'GET /repos/{owner}/{repo}/git/commits/{commit_sha}') return {tree: {sha: 'tree'}};
-    if (route === 'POST /repos/{owner}/{repo}/git/trees') { trees.push(args.tree); return {sha: 'tree2'}; }
-    if (route === 'POST /repos/{owner}/{repo}/git/commits') return {sha: 'd'.repeat(40)};
-    if (route.startsWith('PATCH /repos/{owner}/{repo}/git/refs/')) return {};
-    if (route === 'GET /repos/{owner}/{repo}/pulls') return [];
-    if (route === 'POST /repos/{owner}/{repo}/pulls') return {number: 25, node_id: 'PR_node', html_url: 'pr-url'};
-    if (route === 'GET /repos/{owner}/{repo}/pulls/{pull_number}') return {number: 25, node_id: 'PR_node', merged: false, head: {sha: 'd'.repeat(40)}};
-    throw new Error(route);
+    if (route === 'GET /repos/{owner}/{repo}/contents/{path}') {
+      assert.equal(args.ref, 'main'); assert.equal(args.path, 'README.md');
+      reads++;
+      const text = options.synced ? release.renderReadme(original, meta) : original + (reads > 1 ? '동시 수정' : '');
+      return {type: 'file', sha: String(reads).repeat(40), encoding: 'base64', content: Buffer.from(text).toString('base64')};
+    }
+    if (route === 'PUT /repos/{owner}/{repo}/contents/{path}') {
+      writes++;
+      assert.equal(args.branch, 'main'); assert.equal(args.path, 'README.md');
+      assert.equal(args.sha, String(reads).repeat(40));
+      assert.match(args.message, /^docs: sync README/);
+      if (options.status && (options.alwaysFail || writes === 1)) { const error = new Error('private API details'); error.status = options.status; throw error; }
+      return {commit: {sha: 'b'.repeat(40)}};
+    }
+    throw new Error('Unexpected request: ' + route);
   });
-  await release.readme({github, context, core});
-  assert.equal(trees.length, 2);
-  assert.ok(trees.at(-1)[0].content.endsWith('동시 수정 보존'));
-  assert.equal(core.outputs.readme_status, 'pending'); assert.equal(core.warnings.length, 1);
-});
-/** 역할: 자동 병합 거부 후 직접 병합 경계를 모사한다. 입력: PR 병합 가능 상태. 출력: API 대역과 core. */
-function readmeFallbackFixture(mergeableState) {
-  const meta = {...metadata, repository: 'mchany/comcigan-neo'};
-  const core = coreFixture();
-  const github = apiFixture((route, args) => {
-    if (route.includes('/releases/latest')) return {id: 1, tag_name: 'v1.1.1', assets: [{id: 1, name: 'release-metadata.json'}]};
-    if (route.includes('/releases/assets/')) return Buffer.from(JSON.stringify(meta));
-    if (route === 'GET /repos/{owner}/{repo}/git/ref/{ref}') return {object: {sha: 'b'.repeat(40)}};
-    if (route.includes('/contents/')) return {content: Buffer.from('<!-- release:start -->old<!-- release:end -->').toString('base64')};
-    if (route === 'GET /repos/{owner}/{repo}/git/commits/{commit_sha}') return {tree: {sha: 'tree'}};
-    if (route === 'POST /repos/{owner}/{repo}/git/trees') return {sha: 'tree2'};
-    if (route === 'POST /repos/{owner}/{repo}/git/commits') return {sha: 'd'.repeat(40)};
-    if (route.startsWith('PATCH /repos/{owner}/{repo}/git/refs/')) return {};
-    if (route === 'GET /repos/{owner}/{repo}/pulls') return [];
-    if (route === 'POST /repos/{owner}/{repo}/pulls') return {number: 25, node_id: 'PR_node', html_url: 'pr-url'};
-    if (route === 'GET /repos/{owner}/{repo}/pulls/{pull_number}') return {number: 25, node_id: 'PR_node', merged: false, mergeable_state: mergeableState, head: {sha: 'd'.repeat(40)}};
-    if (route === 'PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge') return {merged: true};
-    throw new Error(route);
-  });
-  // 역할: 예약 자동 병합 API의 거부를 재현한다. 입력: mutation. 출력: 민감한 원문을 포함하지 않는 합성 오류.
-  github.graphql = async () => { throw new Error('automatic merge unavailable'); };
   return {github, core};
 }
-// 역할: 예약 API 실패 시 검증되지 않은 clean PR을 즉시 병합하지 않는다. 입력: clean PR. 출력: 후속 CI 처리 대기.
-test('clean README PR waits for independent CI validation when auto merge is unavailable', async () => {
-  const {github, core} = readmeFallbackFixture('clean');
-  await release.readme({github, context, core});
-  assert.equal(github.calls.some(([route]) => route.startsWith('PUT ')), false);
-  assert.equal(core.outputs.readme_status, 'pending');
+// 역할: PR·브랜치 없이 README 한 파일만 main에 반영한다. 입력: 최신 릴리즈. 출력: 직접 커밋 및 synced.
+test('README commits directly to main without PR or branch APIs', async () => {
+  const f = directReadmeFixture(); await release.readme({...f, context});
+  const writes = f.github.calls.filter(([route]) => !route.startsWith('GET '));
+  assert.equal(writes.length, 1); assert.equal(writes[0][0], 'PUT /repos/{owner}/{repo}/contents/{path}');
+  assert.match(Buffer.from(writes[0][1].content, 'base64').toString('utf8'), /사용자 본문/);
+  assert.equal(f.core.outputs.readme_status, 'synced');
 });
-// 역할: CI 실행 중·병합 계산 중·리뷰 대기를 오류나 우회 병합으로 처리하지 않는다. 입력: 대기 PR. 출력: pending.
-test('unknown unstable and blocked README PRs remain pending without bypassing checks', async () => {
-  for (const state of ['unknown', 'unstable', 'blocked']) {
-    const {github, core} = readmeFallbackFixture(state);
-    await release.readme({github, context, core});
-    assert.equal(github.calls.some(([route]) => route.startsWith('PUT ')), false);
-    assert.equal(core.outputs.readme_status, 'pending');
+// 역할: 같은 파일 충돌 시 사용자 변경을 보존한다. 입력: 최초 쓰기의 409. 출력: 새 파일 SHA로 재시도.
+test('README conflict retries with latest main content and file SHA', async () => {
+  const f = directReadmeFixture({status: 409}); await release.readme({...f, context});
+  const writes = f.github.calls.filter(([route]) => route.startsWith('PUT '));
+  assert.equal(writes.length, 2);
+  assert.ok(Buffer.from(writes[1][1].content, 'base64').toString('utf8').endsWith('동시 수정'));
+  assert.equal(f.core.outputs.readme_status, 'synced');
+});
+// 역할: 이미 반영된 README에는 중복 커밋을 만들지 않는다. 입력: 최신 본문. 출력: 쓰기 없음.
+test('README rerun is a no-op when main already matches', async () => {
+  const f = directReadmeFixture({synced: true}); await release.readme({...f, context});
+  assert.ok(f.github.calls.every(([route]) => route.startsWith('GET ')));
+  assert.equal(f.core.outputs.readme_status, 'synced');
+});
+// 역할: 보호 규칙과 권한 실패를 숨기거나 우회하지 않는다. 입력: 403·422 응답. 출력: 재시도 없는 실패.
+test('README rejects permission or protection errors without retrying', async () => {
+  for (const status of [403, 422]) {
+    const f = directReadmeFixture({status}); await assert.rejects(() => release.readme({...f, context}), new RegExp(String(status)));
+    assert.equal(f.github.calls.filter(([r]) => r.startsWith('PUT ')).length, 1);
+    assert.notEqual(f.core.outputs.readme_status, 'synced');
   }
+});
+// 역할: 지속 충돌과 릴리즈 교체를 명시적으로 중단한다. 입력: 경합·신규 릴리즈. 출력: 제한된 실패.
+test('README bounds conflict retries and refuses a superseded release', async () => {
+  const conflict = directReadmeFixture({status: 409, alwaysFail: true});
+  await assert.rejects(() => release.readme({...conflict, context}), /계속 변경/);
+  assert.equal(conflict.github.calls.filter(([r]) => r.startsWith('PUT ')).length, 3);
+  const stale = directReadmeFixture({newRelease: true});
+  await assert.rejects(() => release.readme({...stale, context}), /새 릴리즈/);
+  assert.ok(stale.github.calls.every(([r]) => r.startsWith('GET ')));
+});
+// 역할: PR과 다른 브랜치에서 main 쓰기를 막는다. 입력: PR context. 출력: API 호출 전 거부.
+test('README direct writes require official main context', async () => {
+  const f = directReadmeFixture();
+  await assert.rejects(() => release.readme({...f, context: {...context, ref: 'refs/pull/22/merge'}}), /main/);
+  assert.equal(f.github.calls.length, 0);
 });
 /** 역할: 태그 조회가 Draft를 숨기는 API를 모사한다. 입력: 산출물·변조 옵션. 출력: 기존 Draft와 API 호출 기록. */
 function existingDraftFixture(folder, options = {}) {

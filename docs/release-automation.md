@@ -12,8 +12,8 @@ GitHub 저장소 Settings → Environments에서 다음 환경을 **미리 생�
 |---|---|---|
 | release-build | NEIS_API_KEY | 없음 |
 | release-signing | ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD | ANDROID_CERT_SHA256 |
-| release-publishing | RELEASE_APP_PRIVATE_KEY | RELEASE_APP_ID |
-| release-readme | RELEASE_APP_PRIVATE_KEY | RELEASE_APP_ID |
+| release-publishing | 없음 | 없음 |
+| release-readme | 없음 | 없음 |
 
 키는 등록하지 않은 상태로 PR을 제공한다. Settings → 해당 Environment → Secrets/Variables에서 위 이름 그대로 등록한다.
 
@@ -23,7 +23,6 @@ GitHub 저장소 Settings → Environments에서 다음 환경을 **미리 생�
 - ANDROID_KEY_PASSWORD: 개인키 비밀번호. keystore 비밀번호와 같더라도 별도로 등록한다.
 - ANDROID_CERT_SHA256: 신뢰하는 기존 배포 APK의 인증서 SHA-256. 콜론 유무·대소문자는 무관하다. APK 파일 SHA-256과 혼동하지 않는다.
 - NEIS_API_KEY: 기존 나이스 인증키. 키는 APK에 포함되어 추출 가능하며 비밀 보관 수단이 아니다.
-- RELEASE_APP_ID / RELEASE_APP_PRIVATE_KEY: 아래 README 동기화용 GitHub App 설정.
 
 기존 APK의 인증서 확인:
 
@@ -41,38 +40,28 @@ Base64를 화면에 출력하지 않고 등록하는 예시(사용자가 직접 
 
 나머지 비밀번호는 GitHub UI 또는 gh secret set의 대화형 입력으로 등록한다. 비밀번호를 명령행 인수·저장소 파일에 넣지 않는다. Base64도 비밀값이며 암호화가 아니다. GitHub Secret의 항목당 48KB 제한은 인코딩 후 크기에 적용한다.
 
-## README 동기화용 GitHub App
+## README 직접 반영 권한
 
-개인 계정 Settings → Developer settings → GitHub Apps에서 개인 App을 생성한다.
+릴리즈 게시와 README 반영은 job에 부여한 contents: write 권한의 GITHUB_TOKEN을 사용한다. GitHub App, App 개인키, Pull requests 권한과 Allow auto-merge 설정은 필요 없다. 기존 RELEASE_APP_ID와 RELEASE_APP_PRIVATE_KEY는 이 Workflow에서 사용하지 않는다.
 
-1. Repository permissions: Contents Read and write, Pull requests Read and write, Metadata Read-only.
-2. Webhook은 이 자동화에서 필요하지 않으므로 비활성화한다.
-3. 설치 범위를 mchany/comcigan-neo 하나로 제한한다.
-4. App ID를 RELEASE_APP_ID로, 생성한 PEM 개인키 원문을 RELEASE_APP_PRIVATE_KEY로 위 두 Environment에 등록한다.
-5. 저장소 Settings → General에서 Allow auto-merge를 켜고 squash merge를 허용한다.
-6. main 보호 규칙에 필요한 CI를 지정한다. Workflow·Gradle·릴리즈 스크립트 변경은 검토한다.
+README는 공개된 최신 릴리즈 메타데이터를 읽은 뒤 Contents API로 main의 README.md 한 파일만 직접 커밋한다. PR·별도 브랜치·CI 완료 이벤트를 만들지 않는다. GITHUB_TOKEN으로 만든 커밋은 새 push Workflow를 실행시키지 않으므로 반복 실행이 생기지 않는다.
 
-App이 main 보호 규칙을 우회하도록 구성할 필요는 없다. README는 codex/readme-release-sync 브랜치에서 PR로 반영한다. 사람 리뷰가 필수이면 자동 병합 예약만 하고 대기하며, Workflow 경고에 PR 링크와 pending 상태를 표시한다. 사람 승인 없이 완결하려면 저장소의 리뷰 정책도 이에 맞아야 한다.
-
-main에 보호 규칙이 없어 GitHub의 예약 자동 병합을 사용할 수 있는 조건이 아니어도 오류로 처리하지 않는다. PR은 pending으로 보존하고 아래 Release의 sync-readme 모드가 CI 완료 후 병합을 담당한다. Allow auto-merge를 켜는 것만으로 모든 PR의 예약 병합이 가능한 것은 아니다.
-
-github-script의 Octokit REST·GraphQL 클라이언트가 GitHub 게시·README PR을 관리한다. 별도 Python 설치·파싱 도구와 외부 JavaScript 패키지를 추가하지 않는다. GITHUB_TOKEN이 만든 PR의 후속 CI 실행 제약을 피하기 위해 README에는 설치 토큰을 사용한다. 실제 릴리즈의 태그·첨부 게시에는 짧은 수명의 GITHUB_TOKEN을 사용한다. App은 서명 키와 나이스 키를 받지 않는다.
+main의 보호 규칙이 직접 쓰기를 금지하면 README 단계가 실패한다. 이 경우 저장소 정책에서 자동 반영을 허용할 수 있는지 확인해야 하며, Workflow는 보호 규칙을 바꾸거나 강제 푸시하지 않는다.
 
 ## 릴리즈 절차
 
-릴리즈 관련 정의는 `.github/workflows/release.yml` 하나로 관리한다. 검증은 check job, 빌드·서명·게시는 각각 격리된 job, README 후속 병합은 finish job으로 실행한다.
+릴리즈 관련 정의는 `.github/workflows/release.yml` 하나로 관리한다. 검증은 check job, 빌드·서명·게시는 각각 격리된 job, README 직접 반영은 readme job으로 실행한다.
 
 검증한 버전 정보는 job 출력으로 준비 단계에 전달해 TOML 내보내기를 중복 실행하지 않는다. 릴리즈 APK job의 표시 이름은 Build release APK로 두어 Android CI의 build 검사와 구분한다.
 
 | 이벤트 | 실행 범위 |
 |---|---|
 | main 대상 PR | 시크릿 없는 릴리즈 설정·회귀 검증 |
-| main push | 검증 후 명시적인 chore: release 커밋만 빌드·서명·게시·README PR 생성 |
+| main push | 검증 후 명시적인 chore: release 커밋만 빌드·서명·게시·README 직접 커밋 |
 | 수동 operation=release | main의 버전·태그 정합성 검사 후 릴리즈 파이프라인 |
-| 수동 operation=sync-readme | 현재 README PR의 CI 검사·조건부 병합만 실행 |
-| README 전용 브랜치의 CI 완료 | 같은 Release Workflow의 README 후속 처리만 실행 |
+| 수동 operation=sync-readme | 최신 공개 릴리즈 안내만 main README에 직접 반영 |
 
-PR 검증은 PR별 concurrency 그룹을 사용한다. 배포·README 쓰기만 release-production 그룹으로 직렬화해 PR의 CI가 릴리즈 실행 잠금을 기다리지 않게 한다. Release 자신의 완료 이벤트도 README 전용 브랜치에 한정하므로 main에서 실행되는 후속 처리가 자기 자신을 재호출하지 않는다.
+PR 검증은 PR별 concurrency 그룹을 사용한다. 배포·README 쓰기는 release-production 그룹으로 직렬화한다. workflow_run 완료 이벤트를 사용하지 않는다.
 
 1. main 최신 기준의 릴리즈 준비 PR에서 release.toml의 version, version_code, summary, changes를 수정한다.
 2. 버전은 정식 X.Y.Z이며 version_code는 모든 기존 정식 배포보다 커야 한다. 다음 예시는 1.1.1 / 17이다.
@@ -112,40 +101,27 @@ summary와 changes는 사용자에게 보일 문장이다. 릴리즈 설명은 �
 - 재빌드는 같은 소스라도 APK 바이트가 달라질 수 있다. 게시 실패만 복구할 때는 기존 sign job의 immutable artifact를 재사용하도록 publish/readme 실패 job만 재실행한다.
 - unsigned artifact 보존 3일, signed artifact 보존 7일이다. 만료 후에는 무조건 덮어쓰지 말고 원격 첨부와 상태를 확인한다.
 - README 실패: APK 공개는 유지하고 readme 실패 job을 재실행한다. Actions workflow_dispatch로 전체 재실행하면 재빌드 차이로 게시가 거부될 수 있다.
-- README pending: PR 생성은 완료가 아니다. 필수 검사·리뷰를 통과해 실제 병합되었는지 확인한다.
-- 새 릴리즈 공개 전에 이전 README PR 자동 병합을 해제한다. 단일 PR을 새 main/릴리즈 내용으로 갱신하고 stale README 검사 후 자동 병합을 다시 설정한다.
 - 공개 후 결함: 기존 APK 교체 대신 더 높은 버전·versionCode로 수정 배포한다.
 
 최초 baseline v1.1.0은 기존 메타데이터 없는 배포의 예외다. 이후 새 릴리즈에 metadata가 없으면 versionCode를 추측하지 않고 실패한다. 기존 v1.1.0 태그를 이 PR의 소스로 옮기거나 같은 버전으로 재발행하지 않는다.
 
-## README CI 완료 후 병합
+## README만 다시 반영
 
-README PR 생성 직후에는 CI가 아직 등록되지 않았거나 병합 가능 상태가 unknown/unstable일 수 있다. 이를 권한 오류로 단정하거나 즉시 병합하지 않는다.
+Actions → Release → Run workflow에서 main과 operation **sync-readme**를 선택한다. APK를 다시 빌드하거나 게시하지 않고 현재 최신 공개 릴리즈의 안내만 main에 반영한다.
 
-**Release의 sync-readme 모드**는 Android·Release·Betterleaks 실행이 완료되면 후속 검사를 한다. main의 신뢰된 코드만 실행하고 PR 브랜치의 코드를 checkout하거나 실행하지 않는다.
-
-완료 이벤트는 `codex/readme-release-sync` 브랜치로 제한한다. main이나 일반 기능 PR의 CI 완료로는 후속 Workflow 실행을 생성하지 않는다.
-
-- 읽기 전용 GITHUB_TOKEN으로 같은 HEAD의 build·check·Secret Scan 성공과 나머지 CI·상태 검사를 확인한다.
-- 수정 파일이 README 하나인지, 본문이 최신 main과 공개 릴리즈에서 생성한 내용과 정확히 일치하는지 확인한다.
-- CI가 모두 성공한 경우에만 병합 상태를 최대 4회·1초 간격으로 재조회한다. 준비가 끝나면 기존 App 설치 토큰을 만들고 HEAD·릴리즈·본문을 다시 확인해 SHA 조건부 squash 병합한다.
-- 검사 중·실패·HEAD 변경·리뷰 대기는 pending으로 남기며 보호 규칙을 변경하거나 우회하지 않는다. 완료 이벤트는 깨우기 신호로만 사용하고, 이전 HEAD의 이벤트라도 현재 HEAD의 전체 CI를 새로 검사한다.
-
-기존에 대기 중인 PR을 즉시 다시 검사하려면 Actions → **Release** → Run workflow에서 main과 operation **sync-readme**를 선택한다. 버전이나 원본 실행 번호는 필요하지 않으며 APK 게시 작업을 다시 실행하지 않는다. 이 작업은 새 README 커밋을 만들지 않으므로 진행 중인 CI를 초기화하지 않는다.
+현재 파일의 SHA를 조건으로 갱신하며, 409 충돌이 발생하면 최신 본문을 읽어 최대 3회 시도한다. 관리 영역 밖의 사용자 수정은 보존한다. 이미 일치하면 커밋을 만들지 않고 끝낸다. 403·422 권한/보호 규칙 오류는 재시도하지 않는다.
 
 ```sh
 gh workflow run release.yml --repo mchany/comcigan-neo --ref main -f operation=sync-readme
 ```
 
-GitHub App 권한과 시크릿 이름은 기존과 동일하다. Checks·Statuses 조회 권한은 후속 Workflow의 읽기 전용 GITHUB_TOKEN에만 부여한다.
-
 ## 개발 검증
 
 ```sh
-node --test tools/release.test.cjs tools/readme-merge.test.cjs
+node --test tools/release.test.cjs
 ./gradlew :app:exportReleaseMetadata :app:testReleaseAutomation
 actionlint -shellcheck= -pyflakes= .github/workflows/release.yml
 ./gradlew :core:model:test :core:comcigan:test :core:neis:test :app:testDebugUnitTest :app:testReleaseUnitTest :app:lintDebug :app:lintRelease :app:assembleRelease
 ```
 
-실제 키 등록·서명·릴리즈·README PR 생성은 운영 설정 후 첫 릴리즈에서 확인해야 한다. GitHub 처리는 모의 Octokit API로, Gradle APK 검증은 합성 키를 넣은 실제 빌드와 거부 시나리오로 검증한다. 이는 실제 배포 성공을 대신하지 않는다.
+실제 키 등록·서명·릴리즈·README 직접 커밋은 운영 설정 후 첫 릴리즈에서 확인해야 한다. GitHub 처리는 모의 Octokit API로, Gradle APK 검증은 합성 키를 넣은 실제 빌드와 거부 시나리오로 검증한다. 이는 실제 배포 성공을 대신하지 않는다.
