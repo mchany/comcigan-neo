@@ -12,6 +12,7 @@ on:
       - 'core/comcigan/**'
       - 'core/model/**'
       - '.github/workflows/parser-health.yml'
+      - 'tools/parser-health*.cjs'
   workflow_dispatch:
     inputs:
       source:
@@ -39,27 +40,69 @@ jobs:
     name: Live parser check
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
 
     steps:
       - name: Checkout repository
+        id: checkout
         uses: actions/checkout@v4
         with:
           persist-credentials: false
 
       - name: Set up JDK 17
+        id: java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Set up Gradle
+        id: gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Test parser health failure reporting
+        id: reporting-tests
+        run: node --test tools/parser-health.test.cjs
+
       - name: Run offline parser regression tests
+        id: regression
         run: ./gradlew :core:model:test :core:comcigan:test --console=plain
 
       - name: Check live server responses
+        id: live
+        env:
+          PARSER_SUMMARY: ${{ runner.temp }}/parser-health-summary.md
         run: |
+          export GITHUB_STEP_SUMMARY="$PARSER_SUMMARY"
           ./gradlew :core:comcigan:run \
             --args="중일고등학교" \
             --console=plain
+
+      - name: Publish live parser check summary
+        id: summary
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          PARSER_SUMMARY: ${{ runner.temp }}/parser-health-summary.md
+        run: |
+          if [ -f "$PARSER_SUMMARY" ]; then
+            cat "$PARSER_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Report parser health failure
+        if: >-
+          failure() && github.repository == 'mchany/comcigan-neo' &&
+          github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          PARSER_STEPS: ${{ toJSON(steps) }}
+          PARSER_SUMMARY: ${{ runner.temp }}/parser-health-summary.md
+        with:
+          retries: 0
+          script: |
+            await require('./tools/parser-health.cjs').reportFailure({
+              github, context, steps: JSON.parse(process.env.PARSER_STEPS),
+              summaryPath: process.env.PARSER_SUMMARY, attempt: process.env.GITHUB_RUN_ATTEMPT,
+            });
