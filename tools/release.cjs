@@ -7,7 +7,6 @@ const {execFileSync} = require('node:child_process');
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const SHA = /^[0-9a-f]{40}$/;
 const REPO = 'mchany/comcigan-neo';
-const BRANCH = 'codex/readme-release-sync';
 const MARKERS = ['<!-- release:start -->', '<!-- release:end -->'];
 
 /** 역할: 정식 버전을 검증한다. 입력: 버전 문자열. 출력: 숫자 세 쌍 또는 오류. */
@@ -58,7 +57,9 @@ async function call(github, context, route, args = {}, missing = false) {
     return (await github.request(route, {...identity(context), ...args, request: {timeout: 60000}})).data;
   } catch (error) {
     if (missing && error.status === 404) return null;
-    throw new Error(`GitHub API 요청 실패: ${Number.isInteger(error.status) ? error.status : 'network'}`);
+    const failure = new Error(`GitHub API 요청 실패: ${Number.isInteger(error.status) ? error.status : 'network'}`);
+    failure.status = Number.isInteger(error.status) ? error.status : null;
+    throw failure;
   }
 }
 /** 역할: 커밋 메시지를 읽는다. 입력: API와 Actions context. 출력: 고정 SHA의 메시지. */
@@ -238,68 +239,31 @@ async function latestMetadata(github, context) {
   if (metadata.repository !== REPO || latest.tag_name !== `v${metadata.version}`) throw new Error('최신 릴리즈 메타데이터가 다릅니다.');
   return {latest, metadata};
 }
-/** 역할: 오래된 README 동기화 PR을 차단한다. 입력: API 도구와 PR 본문 파일 내용. 출력: 정상 또는 오류. */
-async function checkReadme({github, context, core, text = fs.readFileSync('README.md', 'utf8')}) {
-  const {metadata} = await latestMetadata(github, context);
-  if (text !== renderReadme(text, metadata)) throw new Error('README가 최신 공개 릴리즈와 다릅니다.');
-  core?.setOutput('readme_status', 'current');
-}
-/** 역할: 동기화 전용 열린 PR 목록을 읽는다. 입력: API·context. 출력: PR 배열. */
-async function syncPulls(github, context) {
-  return call(github, context, 'GET /repos/{owner}/{repo}/pulls', {state: 'open', base: 'main', head: `${context.repo.owner}:${BRANCH}`});
-}
-/** 역할: 새 공개 전에 이전 README 자동 병합을 해제한다. 입력: App Octokit과 context. 출력: 해제 완료. */
-async function pauseReadme({github, context}) {
-  for (const pull of await syncPulls(github, context)) {
-    if (pull.auto_merge) await github.graphql('mutation($id:ID!){disablePullRequestAutoMerge(input:{pullRequestId:$id}){pullRequest{id}}}', {id: pull.node_id});
-  }
-}
-/** 역할: 최신 main 본문을 보존하며 README PR을 갱신한다. 입력: App Octokit·context·core. 출력: 실제 병합 또는 대기 상태. */
+/** 역할: 최신 공개 릴리즈 안내를 main README에 직접 커밋한다. 입력: GitHub 도구와 main 실행 정보. 출력: synced 또는 제한된 충돌·권한 오류. */
 async function readme({github, context, core}) {
+  identity(context);
+  if (context.ref !== 'refs/heads/main') throw new Error('main에서만 README를 갱신할 수 있습니다.');
   const {latest, metadata} = await latestMetadata(github, context);
   for (let attempt = 0; attempt < 3; attempt++) {
-    const main = (await call(github, context, 'GET /repos/{owner}/{repo}/git/ref/{ref}', {ref: 'heads/main'})).object.sha;
-    const original = await call(github, context, 'GET /repos/{owner}/{repo}/contents/{path}', {path: 'README.md', ref: main});
-    const text = Buffer.from(original.content, 'base64').toString('utf8'), updated = renderReadme(text, metadata);
-    if (updated === text) { core.setOutput('readme_status', 'synced'); return; }
+    const original = await call(github, context, 'GET /repos/{owner}/{repo}/contents/{path}', {path: 'README.md', ref: 'main'});
+    if (original.type !== 'file' || original.encoding !== 'base64' || !SHA.test(original.sha || '') || typeof original.content !== 'string') throw new Error('README 파일 응답이 잘못되었습니다.');
+    const text = new TextDecoder('utf-8', {fatal: true}).decode(Buffer.from(original.content, 'base64'));
+    const updated = renderReadme(text, metadata);
     if ((await call(github, context, 'GET /repos/{owner}/{repo}/releases/latest')).id !== latest.id) throw new Error('새 릴리즈가 공개되었습니다. README 단계를 다시 실행하세요.');
-    const branch = await call(github, context, 'GET /repos/{owner}/{repo}/git/ref/{ref}', {ref: `heads/${BRANCH}`}, true);
-    if (!branch) await call(github, context, 'POST /repos/{owner}/{repo}/git/refs', {ref: `refs/heads/${BRANCH}`, sha: main});
-    const treeSha = (await call(github, context, 'GET /repos/{owner}/{repo}/git/commits/{commit_sha}', {commit_sha: main})).tree.sha;
-    const tree = await call(github, context, 'POST /repos/{owner}/{repo}/git/trees', {base_tree: treeSha, tree: [{path: 'README.md', mode: '100644', type: 'blob', content: updated}]});
-    const parents = [...new Set([main, branch?.object.sha || main])];
-    const commit = await call(github, context, 'POST /repos/{owner}/{repo}/git/commits', {message: `docs: sync README for v${metadata.version}`, tree: tree.sha, parents});
-    if ((await call(github, context, 'GET /repos/{owner}/{repo}/git/ref/{ref}', {ref: 'heads/main'})).object.sha !== main) continue;
-    await call(github, context, 'PATCH /repos/{owner}/{repo}/git/refs/{ref}', {ref: `heads/${BRANCH}`, sha: commit.sha, force: false});
-    const pulls = await syncPulls(github, context);
-    const body = `## 문제•개선점\n\n공개된 ${latest.tag_name}의 배포 안내를 README에 반영합니다.\n\n## 변경 사항\n\n- 현재 버전·요약·APK·릴리즈 노트·체크섬 링크 갱신\n\n## 검증\n\n- [x] 공개 릴리즈 메타데이터 및 관리 영역 확인\n`;
-    const pull = pulls[0] || await call(github, context, 'POST /repos/{owner}/{repo}/pulls', {title: 'docs: sync README release', head: BRANCH, base: 'main', body});
-    if (pulls.length) await call(github, context, 'PATCH /repos/{owner}/{repo}/pulls/{pull_number}', {pull_number: pull.number, body});
-    const current = await call(github, context, 'GET /repos/{owner}/{repo}/pulls/{pull_number}', {pull_number: pull.number});
-    if (current.head.sha !== commit.sha) throw new Error('README PR의 HEAD가 동시 변경되었습니다.');
-    let state;
+    if (updated === text) { core.setOutput('readme_status', 'synced'); return; }
     try {
-      await github.graphql('mutation($id:ID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:SQUASH}){pullRequest{id}}}', {id: current.node_id});
-      state = await call(github, context, 'GET /repos/{owner}/{repo}/pulls/{pull_number}', {pull_number: pull.number});
-    } catch {
-      const fresh = await call(github, context, 'GET /repos/{owner}/{repo}/pulls/{pull_number}', {pull_number: pull.number});
-      if (fresh.merged) {
-        state = fresh;
-      } else {
-        if (fresh.head?.sha !== commit.sha) throw new Error('README PR의 HEAD가 동시 변경되었습니다.');
-        // 예약 병합이 지원되지 않거나 CI가 아직 등록·진행 중이어도 PR을 보존한다.
-        // 읽기 권한으로 CI를 검증하는 Release의 sync-readme 모드가 이후 조건부 병합을 담당한다.
-        state = fresh;
-      }
+      await call(github, context, 'PUT /repos/{owner}/{repo}/contents/{path}', {
+        path: 'README.md', branch: 'main', sha: original.sha,
+        message: `docs: sync README for v${metadata.version}`,
+        content: Buffer.from(updated, 'utf8').toString('base64'),
+      });
+      core.setOutput('readme_status', 'synced');
+      return;
+    } catch (error) {
+      if (error.status !== 409) throw error;
     }
-    core.setOutput('readme_status', state.merged ? 'synced' : 'pending'); core.setOutput('readme_pr', pull.html_url);
-    if (!state.merged) {
-      core.warning('README PR은 CI·보호 규칙 통과 후 병합됩니다. 예약 병합이 불가능하면 Release의 sync-readme 모드가 완료 이벤트에서 처리합니다.');
-      await core.summary.addRaw(`릴리즈 공개 완료 / README 동기화 대기: [PR](${pull.html_url})\n\nCI 완료 후 Release의 sync-readme 모드가 검증합니다. 기존 PR을 바로 처리하려면 해당 Workflow를 main에서 수동 실행하세요. PR 병합 전에는 동기화가 완료되지 않았습니다.\n`).write();
-    }
-    return;
   }
   throw new Error('main이 계속 변경되어 README 동기화를 완료하지 못했습니다.');
 }
 
-module.exports = {gate, prepare, makeNotes, publish, pauseReadme, readme, checkReadme, validateMetadata, renderReadme, triggerVersion};
+module.exports = {gate, prepare, makeNotes, publish, readme, validateMetadata, renderReadme, triggerVersion};
