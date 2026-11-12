@@ -1,4 +1,10 @@
 import java.util.Properties
+import org.tomlj.Toml
+
+buildscript {
+    repositories { mavenCentral() }
+    dependencies { classpath("org.tomlj:tomlj:1.1.1") }
+}
 
 plugins {
     id("com.android.application")
@@ -6,6 +12,12 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 val emulatorSmoke = providers.gradleProperty("emulatorSmoke").orNull == "true"
+val releaseManifest = Toml.parse(rootProject.file("release.toml").toPath())
+require(!releaseManifest.hasErrors()) { "Invalid release.toml" }
+val releaseVersion = requireNotNull(releaseManifest.getString("release.version"))
+val releaseCode = requireNotNull(releaseManifest.getLong("release.version_code"))
+require(Regex("(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)").matches(releaseVersion))
+require(releaseCode in 1..2_100_000_000L) { "Invalid Android versionCode" }
 val releaseSmoke = providers.gradleProperty("releaseSmoke").orNull == "true"
 require(!releaseSmoke || emulatorSmoke) { "Release smoke tests require the isolated emulatorSmoke package" }
 val neisProperties = Properties().apply {
@@ -24,8 +36,8 @@ android {
         manifestPlaceholders["appLabel"] = if (emulatorSmoke) "컴시간neo 테스트" else "@string/app_name"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "1.0.5"
+        versionCode = releaseCode.toInt()
+        versionName = releaseVersion
         resourceConfigurations += listOf("ko", "en")
         buildConfigField("String", "NEIS_API_KEY", neisKeyLiteral)
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

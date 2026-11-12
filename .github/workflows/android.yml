@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
     paths:
+      - 'release.toml'
+      - 'README.md'
+      - '.github/workflows/**'
       - 'app/**'
       - 'core/**'
       - 'build.gradle.kts'
@@ -15,6 +18,9 @@ on:
       - 'buildSrc/**'
   pull_request:
     paths:
+      - 'release.toml'
+      - 'README.md'
+      - '.github/workflows/**'
       - 'app/**'
       - 'core/**'
       - 'build.gradle.kts'
