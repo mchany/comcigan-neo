@@ -54,11 +54,25 @@ Base64를 화면에 출력하지 않고 등록하는 예시(사용자가 직접 
 
 App이 main 보호 규칙을 우회하도록 구성할 필요는 없다. README는 codex/readme-release-sync 브랜치에서 PR로 반영한다. 사람 리뷰가 필수이면 자동 병합 예약만 하고 대기하며, Workflow 경고에 PR 링크와 pending 상태를 표시한다. 사람 승인 없이 완결하려면 저장소의 리뷰 정책도 이에 맞아야 한다.
 
-main에 보호 규칙이 없어 GitHub의 예약 자동 병합을 사용할 수 있는 조건이 아니어도 오류로 처리하지 않는다. PR은 pending으로 보존하고 아래 Finish README sync가 CI 완료 후 병합을 담당한다. Allow auto-merge를 켜는 것만으로 모든 PR의 예약 병합이 가능한 것은 아니다.
+main에 보호 규칙이 없어 GitHub의 예약 자동 병합을 사용할 수 있는 조건이 아니어도 오류로 처리하지 않는다. PR은 pending으로 보존하고 아래 Release의 sync-readme 모드가 CI 완료 후 병합을 담당한다. Allow auto-merge를 켜는 것만으로 모든 PR의 예약 병합이 가능한 것은 아니다.
 
 github-script의 Octokit REST·GraphQL 클라이언트가 GitHub 게시·README PR을 관리한다. 별도 Python 설치·파싱 도구와 외부 JavaScript 패키지를 추가하지 않는다. GITHUB_TOKEN이 만든 PR의 후속 CI 실행 제약을 피하기 위해 README에는 설치 토큰을 사용한다. 실제 릴리즈의 태그·첨부 게시에는 짧은 수명의 GITHUB_TOKEN을 사용한다. App은 서명 키와 나이스 키를 받지 않는다.
 
 ## 릴리즈 절차
+
+릴리즈 관련 정의는 `.github/workflows/release.yml` 하나로 관리한다. 검증은 check job, 빌드·서명·게시는 각각 격리된 job, README 후속 병합은 finish job으로 실행한다.
+
+검증한 버전 정보는 job 출력으로 준비 단계에 전달해 TOML 내보내기를 중복 실행하지 않는다. 릴리즈 APK job의 표시 이름은 Build release APK로 두어 Android CI의 build 검사와 구분한다.
+
+| 이벤트 | 실행 범위 |
+|---|---|
+| main 대상 PR | 시크릿 없는 릴리즈 설정·회귀 검증 |
+| main push | 검증 후 명시적인 chore: release 커밋만 빌드·서명·게시·README PR 생성 |
+| 수동 operation=release | main의 버전·태그 정합성 검사 후 릴리즈 파이프라인 |
+| 수동 operation=sync-readme | 현재 README PR의 CI 검사·조건부 병합만 실행 |
+| README 전용 브랜치의 CI 완료 | 같은 Release Workflow의 README 후속 처리만 실행 |
+
+PR 검증은 PR별 concurrency 그룹을 사용한다. 배포·README 쓰기만 release-production 그룹으로 직렬화해 PR의 CI가 릴리즈 실행 잠금을 기다리지 않게 한다. Release 자신의 완료 이벤트도 README 전용 브랜치에 한정하므로 main에서 실행되는 후속 처리가 자기 자신을 재호출하지 않는다.
 
 1. main 최신 기준의 릴리즈 준비 PR에서 release.toml의 version, version_code, summary, changes를 수정한다.
 2. 버전은 정식 X.Y.Z이며 version_code는 모든 기존 정식 배포보다 커야 한다. 다음 예시는 1.1.1 / 17이다.
@@ -108,7 +122,7 @@ summary와 changes는 사용자에게 보일 문장이다. 릴리즈 설명은 �
 
 README PR 생성 직후에는 CI가 아직 등록되지 않았거나 병합 가능 상태가 unknown/unstable일 수 있다. 이를 권한 오류로 단정하거나 즉시 병합하지 않는다.
 
-**Finish README sync**는 Android·Release configuration·Betterleaks 실행이 완료되면 후속 검사를 한다. main의 신뢰된 코드만 실행하고 PR 브랜치의 코드를 checkout하거나 실행하지 않는다.
+**Release의 sync-readme 모드**는 Android·Release·Betterleaks 실행이 완료되면 후속 검사를 한다. main의 신뢰된 코드만 실행하고 PR 브랜치의 코드를 checkout하거나 실행하지 않는다.
 
 완료 이벤트는 `codex/readme-release-sync` 브랜치로 제한한다. main이나 일반 기능 PR의 CI 완료로는 후속 Workflow 실행을 생성하지 않는다.
 
@@ -117,10 +131,10 @@ README PR 생성 직후에는 CI가 아직 등록되지 않았거나 병합 가�
 - CI가 모두 성공한 경우에만 병합 상태를 최대 4회·1초 간격으로 재조회한다. 준비가 끝나면 기존 App 설치 토큰을 만들고 HEAD·릴리즈·본문을 다시 확인해 SHA 조건부 squash 병합한다.
 - 검사 중·실패·HEAD 변경·리뷰 대기는 pending으로 남기며 보호 규칙을 변경하거나 우회하지 않는다. 완료 이벤트는 깨우기 신호로만 사용하고, 이전 HEAD의 이벤트라도 현재 HEAD의 전체 CI를 새로 검사한다.
 
-기존에 대기 중인 PR을 즉시 다시 검사하려면 Actions → **Finish README sync** → Run workflow에서 main을 선택한다. 버전이나 원본 실행 번호는 필요하지 않으며 APK 게시 작업을 다시 실행하지 않는다. 이 작업은 새 README 커밋을 만들지 않으므로 진행 중인 CI를 초기화하지 않는다.
+기존에 대기 중인 PR을 즉시 다시 검사하려면 Actions → **Release** → Run workflow에서 main과 operation **sync-readme**를 선택한다. 버전이나 원본 실행 번호는 필요하지 않으며 APK 게시 작업을 다시 실행하지 않는다. 이 작업은 새 README 커밋을 만들지 않으므로 진행 중인 CI를 초기화하지 않는다.
 
 ```sh
-gh workflow run readme-sync.yml --repo mchany/comcigan-neo --ref main
+gh workflow run release.yml --repo mchany/comcigan-neo --ref main -f operation=sync-readme
 ```
 
 GitHub App 권한과 시크릿 이름은 기존과 동일하다. Checks·Statuses 조회 권한은 후속 Workflow의 읽기 전용 GITHUB_TOKEN에만 부여한다.
@@ -130,7 +144,7 @@ GitHub App 권한과 시크릿 이름은 기존과 동일하다. Checks·Statuse
 ```sh
 node --test tools/release.test.cjs tools/readme-merge.test.cjs
 ./gradlew :app:exportReleaseMetadata :app:testReleaseAutomation
-actionlint -shellcheck= -pyflakes= .github/workflows/release.yml .github/workflows/release-check.yml .github/workflows/readme-sync.yml
+actionlint -shellcheck= -pyflakes= .github/workflows/release.yml
 ./gradlew :core:model:test :core:comcigan:test :core:neis:test :app:testDebugUnitTest :app:testReleaseUnitTest :app:lintDebug :app:lintRelease :app:assembleRelease
 ```
 
