@@ -1,17 +1,72 @@
 name: Release
-run-name: Release / ${{ github.event.head_commit.message || github.sha }}
+run-name: >-
+  Release / ${{ (github.event_name == 'workflow_run' || inputs.operation == 'sync-readme') && 'README sync' || github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || github.event.head_commit.message || github.sha }}
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      operation:
+        description: 실행할 릴리즈 작업
+        required: true
+        type: choice
+        default: release
+        options:
+          - release
+          - sync-readme
+  workflow_run:
+    workflows: [Release, Android, Betterleaks Security Scan]
+    branches: [codex/readme-release-sync]
+    types: [completed]
 permissions:
   contents: read
 concurrency:
-  group: release-production
+  group: ${{ github.event_name == 'pull_request' && format('release-check-{0}', github.ref) || 'release-production' }}
   cancel-in-progress: false
 jobs:
+  check:
+    outputs:
+      metadata: ${{ steps.metadata.outputs.metadata }}
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.operation == 'release')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Release regression tests
+        run: node --test tools/release.test.cjs tools/readme-merge.test.cjs
+      - name: Export and validate TOML through Gradle
+        run: ./gradlew :app:exportReleaseMetadata :app:testReleaseAutomation --no-daemon --console=plain
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        name: Validate release metadata and README markers
+        id: metadata
+        with:
+          script: |
+            const fs = require('node:fs');
+            const release = require('./tools/release.cjs');
+            const metadata = JSON.parse(fs.readFileSync('build/release/release.json', 'utf8'));
+            release.validateMetadata(metadata);
+            release.renderReadme(fs.readFileSync('README.md', 'utf8'), {...metadata, repository: context.repo.owner + '/' + context.repo.repo});
+            core.setOutput('metadata', JSON.stringify(metadata));
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        name: Reject stale README synchronization PR
+        if: github.event_name == 'pull_request' && github.head_ref == 'codex/readme-release-sync'
+        with:
+          script: |
+            const text = require('node:fs').readFileSync('README.md', 'utf8');
+            await require('./tools/release.cjs').checkReadme({github, context, core, text});
   prepare:
-    if: github.repository == 'mchany/comcigan-neo' && github.ref == 'refs/heads/main'
+    needs: check
+    if: >-
+      github.repository == 'mchany/comcigan-neo' && github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.operation == 'release'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -29,22 +84,17 @@ jobs:
         id: gate
         with:
           script: await require('./tools/release.cjs').gate({github, context, core});
-      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
-        if: steps.gate.outputs.trigger == 'true'
-        with:
-          distribution: temurin
-          java-version: '17'
-      - name: Export Gradle release metadata
-        if: steps.gate.outputs.trigger == 'true'
-        run: ./gradlew :app:exportReleaseMetadata --no-daemon --console=plain
       - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         if: steps.gate.outputs.trigger == 'true'
         id: release
         with:
           script: |
-            const metadata = JSON.parse(require('node:fs').readFileSync('build/release/release.json', 'utf8'));
+            const metadata = JSON.parse(process.env.RELEASE_METADATA);
             await require('./tools/release.cjs').prepare({github, context, core, metadata});
+        env:
+          RELEASE_METADATA: ${{ needs.check.outputs.metadata }}
   build:
+    name: Build release APK
     needs: prepare
     if: needs.prepare.outputs.trigger == 'true'
     environment: release-build
@@ -65,7 +115,7 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - name: Offline tests and lint (without release keys)
         run: |
-          node --test tools/release.test.cjs tools/recovery.test.cjs tools/readme-merge.test.cjs
+          node --test tools/release.test.cjs tools/readme-merge.test.cjs
           ./gradlew :app:testReleaseAutomation :core:model:test :core:comcigan:test :core:neis:test :app:testDebugUnitTest :app:testReleaseUnitTest :app:lintDebug :app:lintRelease :app:compileDebugAndroidTestKotlin -PemulatorSmoke=true --no-daemon --console=plain
       - name: Build and verify production APK through Gradle
         env:
@@ -202,3 +252,52 @@ jobs:
         with:
           github-token: ${{ steps.app.outputs.token }}
           script: await require('./tools/release.cjs').readme({github, context, core});
+  finish:
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+      statuses: read
+    if: >-
+      github.repository == 'mchany/comcigan-neo' && github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'workflow_dispatch' && inputs.operation == 'sync-readme') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'codex/readme-release-sync' &&
+      github.event.workflow_run.head_repository.full_name == 'mchany/comcigan-neo'))
+    environment: release-readme
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        id: check
+        name: Check latest README and completed CI with read-only token
+        with:
+          script: |
+            const expectedHead = context.eventName === 'workflow_run' ? context.payload.workflow_run.head_sha : null;
+            await require('./tools/readme-merge.cjs').checkReadmeMerge({github, context, core, expectedHead});
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        if: steps.check.outputs.ready == 'true'
+        id: app
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: comcigan-neo
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        if: steps.check.outputs.ready == 'true'
+        name: Merge only the validated HEAD without bypassing repository rules
+        env:
+          README_PR_NUMBER: ${{ steps.check.outputs.pr_number }}
+          README_HEAD_SHA: ${{ steps.check.outputs.sha }}
+          README_RELEASE_ID: ${{ steps.check.outputs.release_id }}
+        with:
+          github-token: ${{ steps.app.outputs.token }}
+          script: |
+            await require('./tools/readme-merge.cjs').mergeReadme({github, context, core,
+              number:process.env.README_PR_NUMBER, sha:process.env.README_HEAD_SHA,
+              releaseId:process.env.README_RELEASE_ID});

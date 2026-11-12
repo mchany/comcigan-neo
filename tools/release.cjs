@@ -180,15 +180,14 @@ function makeNotes({metadata, apk, evidence, output, sha, repo, runUrl}) {
   fs.writeFileSync(path.join(output, 'release-notes.md'), notes);
   return meta;
 }
-/** 역할: Draft 첨부의 원격 바이트를 검증한 뒤 공개한다. 입력: Actions 도구·버전·산출물 폴더와 복구 시 기존 태그 필수 옵션. 출력: 공개 URL 또는 검증 오류. */
-async function publish({github, context, core, metadata, directory, requireExistingTag = false}) {
+/** 역할: Draft 첨부의 원격 바이트를 검증한 뒤 공개한다. 입력: Actions 도구·버전·산출물 폴더. 출력: 공개 URL 또는 검증 오류. */
+async function publish({github, context, core, metadata, directory}) {
   identity(context); validateMetadata(metadata);
   const meta = JSON.parse(fs.readFileSync(path.join(directory, 'release-metadata.json'), 'utf8'));
   if (meta.source_sha !== context.sha || meta.repository !== REPO || meta.version !== metadata.version || meta.version_code !== metadata.version_code) throw new Error('산출물과 배포 입력이 다릅니다.');
   const name = `comcigan-neo-${metadata.version}.apk`;
   if (meta.apk_name !== name || digest(path.join(directory, name)) !== meta.apk_sha256 || fs.readFileSync(path.join(directory, 'SHA256SUMS.txt'), 'utf8') !== `${meta.apk_sha256}  ${name}\n`) throw new Error('APK 무결성 검증에 실패했습니다.');
   const tag = `v${metadata.version}`, target = await tagSha(github, context, tag);
-  if (requireExistingTag && !target) throw new Error('복구 대상의 기존 태그가 사라졌습니다. 태그를 생성하지 않습니다.');
   if (target && target !== context.sha) throw new Error('다른 소스의 기존 태그는 변경하지 않습니다.');
   await validateLatest(github, context, metadata);
   if (!target) await call(github, context, 'POST /repos/{owner}/{repo}/git/refs', {ref: `refs/tags/${tag}`, sha: context.sha});
@@ -289,14 +288,14 @@ async function readme({github, context, core}) {
       } else {
         if (fresh.head?.sha !== commit.sha) throw new Error('README PR의 HEAD가 동시 변경되었습니다.');
         // 예약 병합이 지원되지 않거나 CI가 아직 등록·진행 중이어도 PR을 보존한다.
-        // 읽기 권한으로 CI를 검증하는 Finish README sync가 이후 조건부 병합을 담당한다.
+        // 읽기 권한으로 CI를 검증하는 Release의 sync-readme 모드가 이후 조건부 병합을 담당한다.
         state = fresh;
       }
     }
     core.setOutput('readme_status', state.merged ? 'synced' : 'pending'); core.setOutput('readme_pr', pull.html_url);
     if (!state.merged) {
-      core.warning('README PR은 CI·보호 규칙 통과 후 병합됩니다. 예약 병합이 불가능하면 Finish README sync가 완료 이벤트에서 처리합니다.');
-      await core.summary.addRaw(`릴리즈 공개 완료 / README 동기화 대기: [PR](${pull.html_url})\n\nCI 완료 후 Finish README sync가 검증합니다. 기존 PR을 바로 처리하려면 해당 Workflow를 main에서 수동 실행하세요. PR 병합 전에는 동기화가 완료되지 않았습니다.\n`).write();
+      core.warning('README PR은 CI·보호 규칙 통과 후 병합됩니다. 예약 병합이 불가능하면 Release의 sync-readme 모드가 완료 이벤트에서 처리합니다.');
+      await core.summary.addRaw(`릴리즈 공개 완료 / README 동기화 대기: [PR](${pull.html_url})\n\nCI 완료 후 Release의 sync-readme 모드가 검증합니다. 기존 PR을 바로 처리하려면 해당 Workflow를 main에서 수동 실행하세요. PR 병합 전에는 동기화가 완료되지 않았습니다.\n`).write();
     }
     return;
   }
