@@ -54,6 +54,8 @@ Base64를 화면에 출력하지 않고 등록하는 예시(사용자가 직접 
 
 App이 main 보호 규칙을 우회하도록 구성할 필요는 없다. README는 codex/readme-release-sync 브랜치에서 PR로 반영한다. 사람 리뷰가 필수이면 자동 병합 예약만 하고 대기하며, Workflow 경고에 PR 링크와 pending 상태를 표시한다. 사람 승인 없이 완결하려면 저장소의 리뷰 정책도 이에 맞아야 한다.
 
+main에 보호 규칙이 없어 GitHub의 예약 자동 병합을 사용할 수 있는 조건이 아니어도 오류로 처리하지 않는다. PR은 pending으로 보존하고 아래 Finish README sync가 CI 완료 후 병합을 담당한다. Allow auto-merge를 켜는 것만으로 모든 PR의 예약 병합이 가능한 것은 아니다.
+
 github-script의 Octokit REST·GraphQL 클라이언트가 GitHub 게시·README PR을 관리한다. 별도 Python 설치·파싱 도구와 외부 JavaScript 패키지를 추가하지 않는다. GITHUB_TOKEN이 만든 PR의 후속 CI 실행 제약을 피하기 위해 README에는 설치 토큰을 사용한다. 실제 릴리즈의 태그·첨부 게시에는 짧은 수명의 GITHUB_TOKEN을 사용한다. App은 서명 키와 나이스 키를 받지 않는다.
 
 ## 릴리즈 절차
@@ -123,12 +125,31 @@ gh workflow run release-recover.yml --repo mchany/comcigan-neo --ref main -f run
 
 태그 조회 API는 공개 릴리즈를 찾는 용도로 사용하고, Draft 복구는 인증된 릴리즈 목록에서 유일한 태그를 찾는다. 업로드 후 첨부 검증은 릴리즈 ID로 다시 조회한다. 같은 태그의 여러 Draft가 있거나 업로드 도중 삭제되면 임의로 복구하지 않는다.
 
+## README CI 완료 후 병합
+
+README PR 생성 직후에는 CI가 아직 등록되지 않았거나 병합 가능 상태가 unknown/unstable일 수 있다. 이를 권한 오류로 단정하거나 즉시 병합하지 않는다.
+
+**Finish README sync**는 Android·Release configuration·Betterleaks 실행이 완료되면 후속 검사를 한다. main의 신뢰된 코드만 실행하고 PR 브랜치의 코드를 checkout하거나 실행하지 않는다.
+
+- 읽기 전용 GITHUB_TOKEN으로 같은 HEAD의 build·check·Secret Scan 성공과 나머지 CI·상태 검사를 확인한다.
+- 수정 파일이 README 하나인지, 본문이 최신 main과 공개 릴리즈에서 생성한 내용과 정확히 일치하는지 확인한다.
+- CI가 모두 성공한 경우에만 병합 상태를 최대 4회·1초 간격으로 재조회한다. 준비가 끝나면 기존 App 설치 토큰을 만들고 HEAD·릴리즈·본문을 다시 확인해 SHA 조건부 squash 병합한다.
+- 검사 중·실패·HEAD 변경·리뷰 대기는 pending으로 남기며 보호 규칙을 변경하거나 우회하지 않는다. 완료 이벤트는 깨우기 신호로만 사용하고, 이전 HEAD의 이벤트라도 현재 HEAD의 전체 CI를 새로 검사한다.
+
+기존에 대기 중인 PR을 즉시 다시 검사하려면 Actions → **Finish README sync** → Run workflow에서 main을 선택한다. 버전이나 원본 실행 번호는 필요하지 않으며 APK 게시 작업을 다시 실행하지 않는다. 이 작업은 새 README 커밋을 만들지 않으므로 진행 중인 CI를 초기화하지 않는다.
+
+```sh
+gh workflow run readme-sync.yml --repo mchany/comcigan-neo --ref main
+```
+
+GitHub App 권한과 시크릿 이름은 기존과 동일하다. Checks·Statuses 조회 권한은 후속 Workflow의 읽기 전용 GITHUB_TOKEN에만 부여한다.
+
 ## 개발 검증
 
 ```sh
-node --test tools/release.test.cjs tools/recovery.test.cjs
+node --test tools/release.test.cjs tools/recovery.test.cjs tools/readme-merge.test.cjs
 ./gradlew :app:exportReleaseMetadata :app:testReleaseAutomation
-actionlint -shellcheck= -pyflakes= .github/workflows/release.yml .github/workflows/release-check.yml .github/workflows/release-recover.yml
+actionlint -shellcheck= -pyflakes= .github/workflows/release.yml .github/workflows/release-check.yml .github/workflows/release-recover.yml .github/workflows/readme-sync.yml
 ./gradlew :core:model:test :core:comcigan:test :core:neis:test :app:testDebugUnitTest :app:testReleaseUnitTest :app:lintDebug :app:lintRelease :app:assembleRelease
 ```
 
