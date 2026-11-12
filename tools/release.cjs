@@ -121,6 +121,13 @@ async function getRelease(github, context, tag) {
   }
   throw new Error('릴리즈 이력이 조회 한도를 초과했습니다.');
 }
+/** 역할: 본문 메타데이터를 읽고 기존 JSON 첨부와 호환한다. 입력: API·context·릴리즈. 출력: 메타데이터 바이트 또는 null. */
+async function metadataBytes(github, context, release) {
+  const matches = [...(release.body || '').matchAll(/<!-- release-metadata:([A-Za-z0-9+/=]+) -->/g)];
+  if (matches.length > 1) throw new Error('릴리즈 본문 메타데이터가 중복되었습니다.');
+  if (matches.length) return Buffer.from(matches[0][1], 'base64');
+  return asset(github, context, release, 'release-metadata.json');
+}
 /** 역할: 공개 메타데이터의 코드와 태그를 확인한다. 입력: 릴리즈와 첨부. 출력: Android 코드 또는 오류. */
 function previousCode(release, raw) {
   if (raw === null) {
@@ -134,7 +141,7 @@ function previousCode(release, raw) {
 /** 역할: 게시 직전 최신 버전과 비교한다. 입력: API·새 버전. 출력: 정상 또는 오류. */
 async function validateLatest(github, context, metadata) {
   const latest = await call(github, context, 'GET /repos/{owner}/{repo}/releases/latest', {}, true);
-  if (latest && latest.tag_name !== `v${metadata.version}`) validateProgress(metadata, latest.tag_name.replace(/^v/, ''), previousCode(latest, await asset(github, context, latest, 'release-metadata.json')));
+  if (latest && latest.tag_name !== `v${metadata.version}`) validateProgress(metadata, latest.tag_name.replace(/^v/, ''), previousCode(latest, await metadataBytes(github, context, latest)));
 }
 /** 역할: TOML 내보내기 결과와 배포 이력을 검증한다. 입력: Actions 도구·JSON 정보. 출력: 검증된 릴리즈 출력. */
 async function prepare({github, context, core, metadata}) {
@@ -153,7 +160,7 @@ async function prepare({github, context, core, metadata}) {
       if (item.tag_name === tag && existingSha === context.sha) continue;
       const version = item.tag_name.slice(1);
       if (compareVersions(version, priorVersion) > 0) priorVersion = version;
-      const raw = await asset(github, context, item, 'release-metadata.json');
+      const raw = await metadataBytes(github, context, item);
       if (raw || compareVersions(version, '1.1.0') >= 0) priorCode = Math.max(priorCode, previousCode(item, raw));
     }
     if (releases.length < 100) break;
@@ -178,7 +185,7 @@ function makeNotes({metadata, apk, evidence, output, sha, repo, runUrl}) {
   fs.writeFileSync(path.join(output, 'release-metadata.json'), `${JSON.stringify(meta, null, 2)}\n`);
   fs.writeFileSync(path.join(output, 'SHA256SUMS.txt'), `${meta.apk_sha256}  ${name}\n`);
   const notes = `## 컴시간neo ${metadata.version}\n\nAndroid 8.0(API 26) 이상을 지원하는 정식 APK입니다. ${metadata.summary}\n\n### 수정 및 개선 사항\n\n${metadata.changes.map(value => `- ${value}`).join('\n')}\n\n### 설치 및 업데이트\n\n\`${name}\`를 내려받아 설치하세요. 기존 배포 인증서와 일치하는 서명을 확인했습니다.\n\n- 앱 ID: \`io.github.mchany.comciganneo\`\n- 버전: \`${metadata.version}\` / versionCode \`${metadata.version_code}\`\n- 지원 환경: Android 8.0(API 26) 이상\n- 소스: [릴리즈 빌드 기준 커밋](https://github.com/${repo}/commit/${sha})\n\n### 검증\n\n${checks.map(value => `- ${value}`).join('\n')}\n\n[자동 검증 실행 기록](${meta.run_url})\n\n실기기 업데이트·설정 보존 검증은 이번 자동화에서 미수행했습니다.\nAPK의 SHA-256은 첨부된 \`SHA256SUMS.txt\`에서 확인할 수 있습니다.\n`;
-  fs.writeFileSync(path.join(output, 'release-notes.md'), notes);
+  fs.writeFileSync(path.join(output, 'release-notes.md'), notes + `\n<!-- release-metadata:${Buffer.from(JSON.stringify(meta), 'utf8').toString('base64')} -->\n`);
   return meta;
 }
 /** 역할: Draft 첨부의 원격 바이트를 검증한 뒤 공개한다. 입력: Actions 도구·버전·산출물 폴더. 출력: 공개 URL 또는 검증 오류. */
@@ -196,7 +203,7 @@ async function publish({github, context, core, metadata, directory}) {
   if (!item) item = await call(github, context, 'POST /repos/{owner}/{repo}/releases', {tag_name: tag, target_commitish: context.sha, name: `컴시간neo ${metadata.version}`, draft: true, prerelease: false});
   const releaseId = item?.id;
   if (!Number.isSafeInteger(releaseId) || releaseId < 1 || item.tag_name !== tag) throw new Error('릴리즈 식별자가 일치하지 않습니다.');
-  const names = [name, 'SHA256SUMS.txt', 'release-metadata.json'];
+  const names = [name, 'SHA256SUMS.txt'];
   for (const filename of names) {
     const bytes = fs.readFileSync(path.join(directory, filename));
     const prior = await asset(github, context, item, filename);
@@ -233,7 +240,7 @@ function renderReadme(text, meta) {
 /** 역할: 최신 공개 릴리즈의 메타데이터를 검증해 읽는다. 입력: API·context. 출력: 릴리즈와 메타데이터. */
 async function latestMetadata(github, context) {
   const latest = await call(github, context, 'GET /repos/{owner}/{repo}/releases/latest');
-  const raw = await asset(github, context, latest, 'release-metadata.json');
+  const raw = await metadataBytes(github, context, latest);
   if (!raw) throw new Error('최신 공개 릴리즈의 메타데이터가 없습니다.');
   const metadata = JSON.parse(raw.toString('utf8'));
   if (metadata.repository !== REPO || latest.tag_name !== `v${metadata.version}`) throw new Error('최신 릴리즈 메타데이터가 다릅니다.');

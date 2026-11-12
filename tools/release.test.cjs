@@ -66,6 +66,8 @@ test('notes include actual evidence and no historic device claims', async () => 
   const meta = release.makeNotes({metadata, apk, evidence: {checks: ['JVM 3개 통과'], certificate_sha256: 'f'.repeat(64)}, output: path.join(folder, 'out'), sha: SHA, repo: 'mchany/comcigan-neo', runUrl: 'https://github.com/mchany/comcigan-neo/actions/runs/1'});
   assert.equal(meta.source_sha, SHA); assert.equal(meta.apk_sha256.length, 64);
   const notes = fs.readFileSync(path.join(folder, 'out/release-notes.md'), 'utf8');
+  const embedded = /<!-- release-metadata:([A-Za-z0-9+/=]+) -->/.exec(notes);
+  assert.deepEqual(JSON.parse(Buffer.from(embedded[1], 'base64').toString('utf8')), meta);
   assert.match(notes, /JVM 3개 통과/); assert.match(notes, /실기기.*미수행/); assert.doesNotMatch(notes, /A33/);
 }));
 // 역할: 과거 v1.1.0 이외의 메타데이터 누락을 거부한다. 입력: 새 공개 릴리즈. 출력: 배포 중단.
@@ -112,7 +114,7 @@ test('draft assets upload to uploads host and are checked before publication', a
     if (route === 'POST /repos/{owner}/{repo}/releases') return (item = {id: 1, draft: true, tag_name: args.tag_name, assets: [], html_url: 'release-url'});
     if (route === 'POST https://uploads.github.com/repos/{owner}/{repo}/releases/{release_id}/assets{?name}') { const id = bytes.size; bytes.set(id, args.data); item.assets.push({id, name: args.name}); return {}; }
     if (route === 'GET /repos/{owner}/{repo}/releases/assets/{asset_id}') return Uint8Array.from(bytes.get(args.asset_id)).buffer;
-    if (route === 'PATCH /repos/{owner}/{repo}/releases/{release_id}') { assert.equal(bytes.size, 3); item.draft = false; return item; }
+    if (route === 'PATCH /repos/{owner}/{repo}/releases/{release_id}') { assert.equal(bytes.size, 2); assert.deepEqual(item.assets.map(a => a.name), ['comcigan-neo-1.1.1.apk', 'SHA256SUMS.txt']); item.draft = false; return item; }
     throw new Error(route);
   });
   const core = coreFixture();
@@ -127,8 +129,8 @@ function directReadmeFixture(options = {}) {
   const core = coreFixture();
   let reads = 0, writes = 0, latestReads = 0;
   const github = apiFixture((route, args) => {
-    if (route.endsWith('/releases/latest')) return {id: options.newRelease && ++latestReads > 1 ? 2 : 1, tag_name: 'v1.1.1', assets: [{id: 1, name: 'release-metadata.json'}]};
-    if (route.includes('/releases/assets/')) return Buffer.from(JSON.stringify(meta));
+    if (route.endsWith('/releases/latest')) return {id: options.newRelease && ++latestReads > 1 ? 2 : 1, tag_name: 'v1.1.1', body: '<!-- release-metadata:' + Buffer.from(JSON.stringify(meta)).toString('base64') + ' -->', assets: []};
+    if (route.includes('/releases/assets/')) throw new Error('JSON attachment must not be required');
     if (route === 'GET /repos/{owner}/{repo}/contents/{path}') {
       assert.equal(args.ref, 'main'); assert.equal(args.path, 'README.md');
       reads++;
@@ -250,3 +252,14 @@ test('draft deleted before verification fails explicitly without publication', a
   await assert.rejects(() => release.publish({github, context, core: coreFixture(), metadata, directory: folder}), /404/);
   assert.ok(github.calls.every(([route]) => route.startsWith('GET ')));
 }));
+
+// 역할: 첨부 없는 릴리즈에서도 이전 versionCode 역행을 막는다. 입력: 본문 메타데이터만 있는 기존 릴리즈. 출력: 이전 코드 이하 버전 거부.
+test('prepare validates prior versionCode using release body without JSON attachment', async () => {
+  const prior = {...metadata, version_code: 19, repository: 'mchany/comcigan-neo'};
+  const github = apiFixture((route) => {
+    if (route.includes('/git/ref/')) { const e = new Error(); e.status = 404; throw e; }
+    if (route === 'GET /repos/{owner}/{repo}/releases') return [{tag_name:'v1.1.1',assets:[],body:'<!-- release-metadata:' + Buffer.from(JSON.stringify(prior)).toString('base64') + ' -->'}];
+    throw new Error(route);
+  });
+  await assert.rejects(() => release.prepare({github, context: {...context, payload:{head_commit:{message:'chore: release 1.1.2'}}}, core:coreFixture(), metadata:{...metadata,version:'1.1.2',version_code:18}}), /버전과 versionCode는/);
+});
