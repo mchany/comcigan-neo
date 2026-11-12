@@ -1,0 +1,204 @@
+name: Release
+run-name: Release / ${{ github.event.head_commit.message || github.sha }}
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-production
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.repository == 'mchany/comcigan-neo' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      trigger: ${{ steps.gate.outputs.trigger }}
+      version: ${{ steps.release.outputs.version }}
+      code: ${{ steps.release.outputs.code }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        id: gate
+        with:
+          script: await require('./tools/release.cjs').gate({github, context, core});
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        if: steps.gate.outputs.trigger == 'true'
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Export Gradle release metadata
+        if: steps.gate.outputs.trigger == 'true'
+        run: ./gradlew :app:exportReleaseMetadata --no-daemon --console=plain
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        if: steps.gate.outputs.trigger == 'true'
+        id: release
+        with:
+          script: |
+            const metadata = JSON.parse(require('node:fs').readFileSync('build/release/release.json', 'utf8'));
+            await require('./tools/release.cjs').prepare({github, context, core, metadata});
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.trigger == 'true'
+    environment: release-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - name: Offline tests and lint (without release keys)
+        run: |
+          node --test tools/release.test.cjs
+          ./gradlew :app:testReleaseAutomation :core:model:test :core:comcigan:test :core:neis:test :app:testDebugUnitTest :app:testReleaseUnitTest :app:lintDebug :app:lintRelease :app:compileDebugAndroidTestKotlin -PemulatorSmoke=true --no-daemon --console=plain
+      - name: Build and verify production APK through Gradle
+        env:
+          NEIS_API_KEY: ${{ secrets.NEIS_API_KEY }}
+        run: |
+          ./gradlew :app:exportReleaseMetadata :app:verifyReleaseApk -PreleaseUiCompileVerified=true --no-daemon --no-build-cache --console=plain
+          cp build/release/release.json unsigned/release.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unsigned-release
+          path: unsigned/
+          if-no-files-found: error
+          retention-days: 3
+  sign:
+    needs: [prepare, build]
+    environment: release-signing
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: unsigned-release
+          path: unsigned
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: 'build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - name: Sign in isolation and verify original certificate
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          EXPECTED_CERT: ${{ vars.ANDROID_CERT_SHA256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          keyfile="$RUNNER_TEMP/release.jks"
+          trap 'rm -f "$keyfile"' EXIT
+          test -n "$KEYSTORE" && test -n "$KS_PASS" && test -n "$KEY_PASS" && test -n "$KEY_ALIAS"
+          expected=$(printf '%s' "$EXPECTED_CERT" | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          [[ "$expected" =~ ^[0-9a-f]{64}$ ]]
+          printf '%s' "$KEYSTORE" | base64 --decode > "$keyfile"
+          tools="$ANDROID_HOME/build-tools/35.0.0"
+          mkdir -p signed
+          "$tools/zipalign" -P 16 -f 4 unsigned/app-release-unsigned.apk "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" sign --ks "$keyfile" --ks-key-alias "$KEY_ALIAS" --ks-pass env:KS_PASS --key-pass env:KEY_PASS --out signed/app-release.apk "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" verify --verbose --print-certs signed/app-release.apk > "$RUNNER_TEMP/certificate.txt"
+          actual=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/certificate.txt" | tr '[:upper:]' '[:lower:]')
+          test "$actual" = "$expected"
+          "$tools/zipalign" -c -P 16 4 signed/app-release.apk
+          export VERIFIED_CERT="$actual"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const evidence = JSON.parse(fs.readFileSync('unsigned/evidence.json', 'utf8'));
+          evidence.certificate_sha256 = process.env.VERIFIED_CERT;
+          evidence.checks.push('기존 배포 인증서 SHA-256 일치 및 APK 서명·정렬 검증');
+          fs.writeFileSync('signed/evidence.json', JSON.stringify(evidence, null, 2));
+          fs.copyFileSync('unsigned/release.json', 'signed/release.json');
+          NODE
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: signed-release
+          path: signed/
+          if-no-files-found: error
+          retention-days: 7
+  publish:
+    needs: [prepare, sign]
+    environment: release-publishing
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: signed-release
+          path: signed
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        id: readme-lock
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: comcigan-neo
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        name: Disable previous README auto-merge before publishing
+        with:
+          github-token: ${{ steps.readme-lock.outputs.token }}
+          script: await require('./tools/release.cjs').pauseReadme({github, context});
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        name: Generate factual notes and publish verified assets
+        with:
+          script: |
+            const fs = require('node:fs');
+            const release = require('./tools/release.cjs');
+            const metadata = JSON.parse(fs.readFileSync('signed/release.json', 'utf8'));
+            const evidence = JSON.parse(fs.readFileSync('signed/evidence.json', 'utf8'));
+            if (metadata.version !== process.env.VERSION || metadata.version_code !== Number(process.env.CODE)) throw new Error('릴리즈 입력 불일치');
+            const repo = context.repo.owner + '/' + context.repo.repo;
+            release.makeNotes({metadata, apk:'signed/app-release.apk', evidence, output:'dist', sha:context.sha, repo, runUrl:process.env.GITHUB_SERVER_URL + '/' + repo + '/actions/runs/' + context.runId});
+            await release.publish({github, context, core, metadata, directory:'dist'});
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          CODE: ${{ needs.prepare.outputs.code }}
+  readme:
+    needs: [prepare, publish]
+    environment: release-readme
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        id: app
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: comcigan-neo
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        name: Synchronize README through a reviewed branch
+        with:
+          github-token: ${{ steps.app.outputs.token }}
+          script: await require('./tools/release.cjs').readme({github, context, core});

@@ -13,6 +13,7 @@
 
 Kotlin과 Jetpack Compose Material 3로 제작한 컴시간알리미 비공식 오픈소스 Android 클라이언트입니다.
 
+<!-- release:start -->
 현재 배포 버전: **1.1.0 — 시간표·급식 정보가 없는 날의 알림 발송을 방지하고, 오래된 캐시를 자동으로 정리하도록 개선했습니다. 2×2 시간표 위젯에서는 오늘의 수업을 목록으로 한눈에 확인할 수 있습니다.** Android 8.0(API 26) 이상에서 설치할 수 있습니다.
 
 [![APK 다운로드 · 1.1.0](https://img.shields.io/badge/APK_다운로드-1.1.0-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/download/v1.1.0/comcigan-neo-1.1.0.apk)
@@ -20,6 +21,8 @@ Kotlin과 Jetpack Compose Material 3로 제작한 컴시간알리미 비공식 �
 
 이전 릴리즈와 동일한 배포 인증서로 서명했으므로 기존 앱을 삭제하지 않고 덮어 설치할 수 있으며, 설정과 데이터가 유지됩니다.
 APK의 SHA-256은 릴리즈에 첨부된 [SHA256SUMS.txt](https://github.com/mchany/comcigan-neo/releases/download/v1.1.0/SHA256SUMS.txt)에서 확인할 수 있습니다.
+
+<!-- release:end -->
 
 ## 구현한 기능
 
@@ -68,6 +71,8 @@ APK의 SHA-256은 릴리즈에 첨부된 [SHA256SUMS.txt](https://github.com/mch
 - 카드를 누르면 오늘·급식 탭을 열고, ↻ 버튼으로 다시 조회합니다. 저장된 자료와 조회 시각을 먼저 표시하며, 자동 갱신은 기기의 절전 정책에 따라 지연될 수 있습니다.
 
 ## 빌드
+
+앱 버전은 `release.toml`에서 관리합니다. `chore: release X.Y.Z` 커밋을 이용하는 자동 배포와 서명 키·GitHub App 설정은 [릴리즈 자동화 운영 문서](docs/release-automation.md)를 참고하세요.
 
 JDK 17, Android SDK Platform 35, Build Tools 35.0.0이 필요합니다.
 Android Studio에서 저장소를 열어 SDK를 지정하거나 로컬 `local.properties`에 `sdk.dir`을 설정하세요.
