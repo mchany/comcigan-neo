@@ -12,6 +12,9 @@ neis.properties
 *.apk
 *.aab
 /app/release/
+/unsigned/
+/signed/
+/dist/
 work/
 __pycache__/
 .DS_Store

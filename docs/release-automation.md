@@ -54,7 +54,7 @@ Base64를 화면에 출력하지 않고 등록하는 예시(사용자가 직접 
 
 App이 main 보호 규칙을 우회하도록 구성할 필요는 없다. README는 codex/readme-release-sync 브랜치에서 PR로 반영한다. 사람 리뷰가 필수이면 자동 병합 예약만 하고 대기하며, Workflow 경고에 PR 링크와 pending 상태를 표시한다. 사람 승인 없이 완결하려면 저장소의 리뷰 정책도 이에 맞아야 한다.
 
-GITHUB_TOKEN이 만든 PR의 후속 CI 실행 제약을 피하기 위해 README에는 설치 토큰을 사용한다. 실제 릴리즈의 태그·첨부 게시에는 짧은 수명의 GITHUB_TOKEN을 사용한다. App은 서명 키와 나이스 키를 받지 않는다.
+github-script의 Octokit REST·GraphQL 클라이언트가 GitHub 게시·README PR을 관리한다. 별도 Python 설치·파싱 도구와 외부 JavaScript 패키지를 추가하지 않는다. GITHUB_TOKEN이 만든 PR의 후속 CI 실행 제약을 피하기 위해 README에는 설치 토큰을 사용한다. 실제 릴리즈의 태그·첨부 게시에는 짧은 수명의 GITHUB_TOKEN을 사용한다. App은 서명 키와 나이스 키를 받지 않는다.
 
 ## 릴리즈 절차
 
@@ -66,7 +66,7 @@ GITHUB_TOKEN이 만든 PR의 후속 CI 실행 제약을 피하기 위해 README�
 
 한 push에는 릴리즈 요청 한 개만 넣고 마지막 커밋으로 둔다. 한 번에 릴리즈 요청 하나씩 진행한다. concurrency는 진행 중 작업을 취소하지 않지만 기본 대기 슬롯은 한 개이므로 요청이 몰리면 오래된 대기 실행이 취소될 수 있다. 취소된 요청은 버전 순서와 공개 상태를 확인한 뒤 복구한다.
 
-TOML은 Python tomllib과 Gradle org.tomlj에서 읽는다. Gradle이 TOML 버전을 직접 사용하므로 커밋과 APK 소스의 버전이 일치한다. versionCode는 실행 번호로 만들지 않아 재실행 시 변경되지 않는다. 별도 버전 상수를 수정할 필요가 없다.
+TOML은 Gradle org.tomlj에서만 읽는다. Gradle의 :app:exportReleaseMetadata가 검증된 JSON을 내보내며 github-script는 이 JSON으로 게시와 README 갱신을 처리한다. Gradle이 TOML 버전을 직접 사용하므로 커밋과 APK 소스의 버전이 일치한다. versionCode는 실행 번호로 만들지 않아 재실행 시 변경되지 않는다. 별도 버전 상수를 수정할 필요가 없다.
 
 summary와 changes는 사용자에게 보일 문장이다. 릴리즈 설명은 이 정보와 **이번 실행의 검증 결과**로 자동 조립한다. 변경한 코드에서 사용자용 설명을 임의로 추측하지 않는다. 물리 기기·설정 보존·ANR 검증은 수행하지 않았다고 명시한다.
 
@@ -74,9 +74,10 @@ summary와 changes는 사용자에게 보일 문장이다. 릴리즈 설명은 �
 
 ## 검증과 보안 경계
 
-- Python 회귀 테스트 및 앱/모듈 Debug·Release 단위 테스트, Debug·Release Lint.
+- Node.js 내장 테스트 러너의 GitHub 처리 회귀 테스트 및 앱/모듈 Debug·Release 단위 테스트, Debug·Release Lint.
 - 별도 .smoke 패키지의 UI 계측 테스트 소스 컴파일. UI 기기 실행은 하지 않는다.
-- 실제 배포 APK는 .smoke가 아닌 정식 앱 ID, non-debuggable, minSdk26, 기대 버전·코드를 검사한다.
+- Gradle의 :app:verifyReleaseApk가 .smoke가 아닌 정식 앱 ID, non-debuggable, minSdk26, 기대 버전·코드와 JUnit·Lint 보고서를 검사한다. unsigned 폴더에 APK·검증 근거를 내보낸다.
+- :app:verifyReleaseApk는 먼저 실행한 JUnit·Debug/Release Lint 보고서가 모두 존재하고 성공해야 통과한다. UI 컴파일 항목은 별도 컴파일 태스크 성공 후 -PreleaseUiCompileVerified=true를 전달한 Workflow에서만 기록한다.
 - 나이스 키는 빌드 단계에만 전달한다. 비어 있거나 DEX 반영을 확인할 수 없으면 실패한다.
 - 배포용 빌드 캐시를 저장하지 않고 APK·검증 결과만 artifact로 올린다.
 - 서명 job은 소스 checkout·Gradle 실행 없이 SDK 도구와 unsigned APK만 받는다.
@@ -104,9 +105,10 @@ summary와 changes는 사용자에게 보일 문장이다. 릴리즈 설명은 �
 ## 개발 검증
 
 ```sh
-python -m unittest discover -s tools -p 'test_*.py'
+node --test tools/release.test.cjs
+./gradlew :app:exportReleaseMetadata :app:testReleaseAutomation
 actionlint -shellcheck= -pyflakes= .github/workflows/release.yml .github/workflows/release-check.yml
-./gradlew :core:model:test :core:comcigan:test :core:neis:test :app:testDebugUnitTest :app:testReleaseUnitTest :app:lintRelease :app:assembleRelease
+./gradlew :core:model:test :core:comcigan:test :core:neis:test :app:testDebugUnitTest :app:testReleaseUnitTest :app:lintDebug :app:lintRelease :app:assembleRelease
 ```
 
-실제 키 등록·서명·릴리즈·README PR 생성은 운영 설정 후 첫 릴리즈에서 확인해야 한다. 이 PR의 테스트는 모의 GitHub API와 합성 APK ZIP으로 실패·재실행 정책을 검증하며, 실제 배포 성공을 대신하지 않는다.
+실제 키 등록·서명·릴리즈·README PR 생성은 운영 설정 후 첫 릴리즈에서 확인해야 한다. GitHub 처리는 모의 Octokit API로, Gradle APK 검증은 합성 키를 넣은 실제 빌드와 거부 시나리오로 검증한다. 이는 실제 배포 성공을 대신하지 않는다.
