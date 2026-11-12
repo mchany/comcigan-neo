@@ -98,6 +98,7 @@ async function tagSha(github, context, tag) {
 }
 /** 역할: 중복 이름을 거부하고 인증된 API로 첨부를 읽는다. 입력: 릴리즈와 이름. 출력: 바이트 또는 null. */
 async function asset(github, context, release, name) {
+  if (!release || !Array.isArray(release.assets)) throw new Error('릴리즈를 확인할 수 없어 첨부 검증을 중단합니다.');
   const matches = release.assets.filter(item => item.name === name);
   if (matches.length > 1) throw new Error('릴리즈 첨부 이름이 중복되었습니다.');
   if (!matches.length) return null;
@@ -105,9 +106,19 @@ async function asset(github, context, release, name) {
   const bytes = await call(github, context, 'GET /repos/{owner}/{repo}/releases/assets/{asset_id}', {asset_id: matches[0].id, headers: {accept: 'application/octet-stream'}});
   return Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
 }
-/** 역할: 태그로 릴리즈를 조회한다. 입력: 태그. 출력: 릴리즈 또는 null. */
+/** 역할: 공개 태그 조회와 인증된 목록으로 기존 Draft까지 찾는다. 입력: 태그. 출력: 유일한 릴리즈 또는 null. */
 async function getRelease(github, context, tag) {
-  return call(github, context, 'GET /repos/{owner}/{repo}/releases/tags/{tag}', {tag}, true);
+  const published = await call(github, context, 'GET /repos/{owner}/{repo}/releases/tags/{tag}', {tag}, true);
+  if (published) return published;
+  const matches = [];
+  for (let page = 1; page <= 100; page++) {
+    const releases = await call(github, context, 'GET /repos/{owner}/{repo}/releases', {per_page: 100, page});
+    if (!Array.isArray(releases)) throw new Error('릴리즈 목록 응답이 잘못되었습니다.');
+    matches.push(...releases.filter(item => item.tag_name === tag));
+    if (matches.length > 1) throw new Error('동일 태그의 릴리즈가 여러 개입니다.');
+    if (releases.length < 100) return matches[0] || null;
+  }
+  throw new Error('릴리즈 이력이 조회 한도를 초과했습니다.');
 }
 /** 역할: 공개 메타데이터의 코드와 태그를 확인한다. 입력: 릴리즈와 첨부. 출력: Android 코드 또는 오류. */
 function previousCode(release, raw) {
@@ -169,19 +180,22 @@ function makeNotes({metadata, apk, evidence, output, sha, repo, runUrl}) {
   fs.writeFileSync(path.join(output, 'release-notes.md'), notes);
   return meta;
 }
-/** 역할: Draft 첨부의 원격 바이트를 검증한 뒤 공개한다. 입력: Actions 도구·버전·산출물 폴더. 출력: 공개 URL. */
-async function publish({github, context, core, metadata, directory}) {
+/** 역할: Draft 첨부의 원격 바이트를 검증한 뒤 공개한다. 입력: Actions 도구·버전·산출물 폴더와 복구 시 기존 태그 필수 옵션. 출력: 공개 URL 또는 검증 오류. */
+async function publish({github, context, core, metadata, directory, requireExistingTag = false}) {
   identity(context); validateMetadata(metadata);
   const meta = JSON.parse(fs.readFileSync(path.join(directory, 'release-metadata.json'), 'utf8'));
   if (meta.source_sha !== context.sha || meta.repository !== REPO || meta.version !== metadata.version || meta.version_code !== metadata.version_code) throw new Error('산출물과 배포 입력이 다릅니다.');
   const name = `comcigan-neo-${metadata.version}.apk`;
   if (meta.apk_name !== name || digest(path.join(directory, name)) !== meta.apk_sha256 || fs.readFileSync(path.join(directory, 'SHA256SUMS.txt'), 'utf8') !== `${meta.apk_sha256}  ${name}\n`) throw new Error('APK 무결성 검증에 실패했습니다.');
   const tag = `v${metadata.version}`, target = await tagSha(github, context, tag);
+  if (requireExistingTag && !target) throw new Error('복구 대상의 기존 태그가 사라졌습니다. 태그를 생성하지 않습니다.');
   if (target && target !== context.sha) throw new Error('다른 소스의 기존 태그는 변경하지 않습니다.');
   await validateLatest(github, context, metadata);
   if (!target) await call(github, context, 'POST /repos/{owner}/{repo}/git/refs', {ref: `refs/tags/${tag}`, sha: context.sha});
   let item = await getRelease(github, context, tag);
   if (!item) item = await call(github, context, 'POST /repos/{owner}/{repo}/releases', {tag_name: tag, target_commitish: context.sha, name: `컴시간neo ${metadata.version}`, draft: true, prerelease: false});
+  const releaseId = item?.id;
+  if (!Number.isSafeInteger(releaseId) || releaseId < 1 || item.tag_name !== tag) throw new Error('릴리즈 식별자가 일치하지 않습니다.');
   const names = [name, 'SHA256SUMS.txt', 'release-metadata.json'];
   for (const filename of names) {
     const bytes = fs.readFileSync(path.join(directory, filename));
@@ -193,7 +207,8 @@ async function publish({github, context, core, metadata, directory}) {
       await call(github, context, 'POST https://uploads.github.com/repos/{owner}/{repo}/releases/{release_id}/assets{?name}', {release_id: item.id, name: filename, data: bytes, headers: {'content-type': 'application/octet-stream', 'content-length': bytes.length}});
     }
   }
-  item = await getRelease(github, context, tag);
+  item = await call(github, context, 'GET /repos/{owner}/{repo}/releases/{release_id}', {release_id: releaseId});
+  if (!item || item.id !== releaseId || item.tag_name !== tag) throw new Error('업로드 후 릴리즈 식별자가 일치하지 않습니다.');
   for (const filename of names) {
     const remote = await asset(github, context, item, filename);
     if (!remote?.equals(fs.readFileSync(path.join(directory, filename)))) throw new Error('원격 첨부 검증에 실패했습니다.');

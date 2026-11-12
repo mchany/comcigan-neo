@@ -65,7 +65,7 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - name: Offline tests and lint (without release keys)
         run: |
-          node --test tools/release.test.cjs
+          node --test tools/release.test.cjs tools/recovery.test.cjs
           ./gradlew :app:testReleaseAutomation :core:model:test :core:comcigan:test :core:neis:test :app:testDebugUnitTest :app:testReleaseUnitTest :app:lintDebug :app:lintRelease :app:compileDebugAndroidTestKotlin -PemulatorSmoke=true --no-daemon --console=plain
       - name: Build and verify production APK through Gradle
         env:

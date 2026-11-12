@@ -102,12 +102,33 @@ summary와 changes는 사용자에게 보일 문장이다. 릴리즈 설명은 �
 
 최초 baseline v1.1.0은 기존 메타데이터 없는 배포의 예외다. 이후 새 릴리즈에 metadata가 없으면 versionCode를 추측하지 않고 실패한다. 기존 v1.1.0 태그를 이 PR의 소스로 옮기거나 같은 버전으로 재발행하지 않는다.
 
+## 코드 수정 후 기존 Draft 복구
+
+실패한 실행의 Re-run failed jobs는 **원래 SHA의 Workflow와 코드**를 다시 실행한다. 게시 코드의 버그를 수정한 경우에는 아래 복구 실행으로 기존 서명 산출물에 수정된 게시 코드를 적용한다.
+
+1. 수정 PR을 main에 병합한다.
+2. Actions → **Recover Release** → Run workflow에서 브랜치를 main으로 선택한다.
+3. run_id에는 원래 Release 실행의 숫자 ID만 입력한다. 이번 v1.1.1 실행은 `43147380805`다.
+4. 복구 실행은 기존 Draft의 첨부 바이트를 확인한 뒤 **정식 공개**하고 README 동기화 PR을 처리한다.
+
+CLI로 실행하려면 다음 명령을 사용한다.
+
+```sh
+gh workflow run release-recover.yml --repo mchany/comcigan-neo --ref main -f run_id=43147380805
+```
+
+복구는 공식 저장소 main의 원래 Release 실행과 성공한 sign 작업을 확인한 뒤 보존 중인 signed-release artifact를 사용한다. 원래 소스 SHA와 실행 URL을 유지하며 APK를 다시 빌드·서명하지 않는다. 나이스 키나 keystore는 복구 작업에 전달하지 않는다. 기존 release-publishing/release-readme 환경의 App 설정을 그대로 사용한다.
+
+태그가 없거나 다른 SHA를 가리키면 중단한다. 태그를 생성·이동하지 않고 다른 바이트의 기존 첨부를 교체하지 않는다. artifact가 만료되었거나 더 최신 버전이 이미 공개된 경우도 중단한다. 기존 서명 artifact 보존 기간은 7일이다.
+
+태그 조회 API는 공개 릴리즈를 찾는 용도로 사용하고, Draft 복구는 인증된 릴리즈 목록에서 유일한 태그를 찾는다. 업로드 후 첨부 검증은 릴리즈 ID로 다시 조회한다. 같은 태그의 여러 Draft가 있거나 업로드 도중 삭제되면 임의로 복구하지 않는다.
+
 ## 개발 검증
 
 ```sh
-node --test tools/release.test.cjs
+node --test tools/release.test.cjs tools/recovery.test.cjs
 ./gradlew :app:exportReleaseMetadata :app:testReleaseAutomation
-actionlint -shellcheck= -pyflakes= .github/workflows/release.yml .github/workflows/release-check.yml
+actionlint -shellcheck= -pyflakes= .github/workflows/release.yml .github/workflows/release-check.yml .github/workflows/release-recover.yml
 ./gradlew :core:model:test :core:comcigan:test :core:neis:test :app:testDebugUnitTest :app:testReleaseUnitTest :app:lintDebug :app:lintRelease :app:assembleRelease
 ```
 
