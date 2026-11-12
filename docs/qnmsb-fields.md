@@ -36,9 +36,8 @@ HMAC 오류가 필드 정규화보다 먼저 거부되는지를 검증한다.
 실서버 검증: 정확한 중일고등학교 검색, 빈 검색, 2026-11-09 시작 시간표의 34개 수업,
 2026-11-16 시작 시간표의 18개 수업을 확인했다. 운영 키·교사명·과목명은 기록하지 않는다.
 
-APK 빌드·서명·설치·Lint는 수행하지 않는다. PR 생성 시 Android 워크플로가 자동으로
-APK를 만들지 않도록 커밋에 `[skip ci]`를 사용하며, JVM 검증 결과는 PR에 별도로 기록한다.
-필수 Actions 검사가 설정된 저장소에서는 자동 검사 생략으로 병합이 대기할 수 있다.
+로컬 APK 빌드·서명·설치·Lint는 수행하지 않는다. PR의 기존 Android 및 Parser Health
+Actions 검증은 정상 실행하며, 로컬 JVM 검증 결과와 Actions 결과를 구분해 기록한다.
 
 참조: https://github.com/hegelty/pycomcigan/pull/18 (065bbe922c484f269df801358181bb8cb93e12f1).
 문법과 고정 벡터의 출처 라이선스는 LICENSES/pycomcigan-MIT.txt를 따른다.
