@@ -286,19 +286,17 @@ async function readme({github, context, core}) {
       const fresh = await call(github, context, 'GET /repos/{owner}/{repo}/pulls/{pull_number}', {pull_number: pull.number});
       if (fresh.merged) {
         state = fresh;
-      } else if (fresh.mergeable_state === 'clean' && fresh.head.sha === commit.sha) {
-        // 보호 규칙을 통과한 경우만 조건부 REST 병합을 시도하며 관리자 우회 권한은 사용하지 않는다.
-        const merged = await call(github, context, 'PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge', {pull_number: pull.number, sha: commit.sha, merge_method: 'squash'});
-        if (merged.merged !== true) throw new Error('README PR의 조건부 병합이 완료되지 않았습니다.');
-        state = {...fresh, merged: true};
       } else {
-        throw new Error('README 자동 병합을 설정하지 못했습니다. PR 보호 규칙과 권한을 확인하세요.');
+        if (fresh.head?.sha !== commit.sha) throw new Error('README PR의 HEAD가 동시 변경되었습니다.');
+        // 예약 병합이 지원되지 않거나 CI가 아직 등록·진행 중이어도 PR을 보존한다.
+        // 읽기 권한으로 CI를 검증하는 Finish README sync가 이후 조건부 병합을 담당한다.
+        state = fresh;
       }
     }
     core.setOutput('readme_status', state.merged ? 'synced' : 'pending'); core.setOutput('readme_pr', pull.html_url);
     if (!state.merged) {
-      core.warning('README PR은 필수 검사·보호 규칙 통과 후 병합됩니다. 아직 동기화가 완료되지 않았습니다.');
-      await core.summary.addRaw(`릴리즈 공개 완료 / README 동기화 대기: [PR](${pull.html_url})\n\n필수 검사·보호 규칙을 확인하세요. PR 병합 전에는 동기화가 완료되지 않았습니다.\n`).write();
+      core.warning('README PR은 CI·보호 규칙 통과 후 병합됩니다. 예약 병합이 불가능하면 Finish README sync가 완료 이벤트에서 처리합니다.');
+      await core.summary.addRaw(`릴리즈 공개 완료 / README 동기화 대기: [PR](${pull.html_url})\n\nCI 완료 후 Finish README sync가 검증합니다. 기존 PR을 바로 처리하려면 해당 Workflow를 main에서 수동 실행하세요. PR 병합 전에는 동기화가 완료되지 않았습니다.\n`).write();
     }
     return;
   }

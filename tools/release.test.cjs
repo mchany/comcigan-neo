@@ -182,22 +182,22 @@ function readmeFallbackFixture(mergeableState) {
   github.graphql = async () => { throw new Error('automatic merge unavailable'); };
   return {github, core};
 }
-// 역할: 검사 완료 PR에서만 정확한 HEAD로 직접 병합한다. 입력: clean PR과 자동 병합 거부. 출력: SHA 조건부 squash 병합과 synced.
-test('clean README PR falls back to SHA-bound merge if auto merge is unavailable', async () => {
+// 역할: 예약 API 실패 시 검증되지 않은 clean PR을 즉시 병합하지 않는다. 입력: clean PR. 출력: 후속 CI 처리 대기.
+test('clean README PR waits for independent CI validation when auto merge is unavailable', async () => {
   const {github, core} = readmeFallbackFixture('clean');
   await release.readme({github, context, core});
-  const request = github.calls.find(([route]) => route === 'PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge');
-  assert.equal(request[1].sha, 'd'.repeat(40)); assert.equal(request[1].merge_method, 'squash');
-  assert.equal(core.outputs.readme_status, 'synced');
-});
-// 역할: 차단되거나 검사 중인 PR을 직접 병합하지 않는다. 입력: blocked PR과 자동 병합 거부. 출력: 실패이며 merge 호출 없음.
-test('blocked README PR does not bypass protections after auto merge failure', async () => {
-  const {github, core} = readmeFallbackFixture('blocked');
-  await assert.rejects(() => release.readme({github, context, core}), /자동 병합|차단/);
   assert.equal(github.calls.some(([route]) => route.startsWith('PUT ')), false);
-  assert.equal(core.outputs.readme_status, undefined);
+  assert.equal(core.outputs.readme_status, 'pending');
 });
-
+// 역할: CI 실행 중·병합 계산 중·리뷰 대기를 오류나 우회 병합으로 처리하지 않는다. 입력: 대기 PR. 출력: pending.
+test('unknown unstable and blocked README PRs remain pending without bypassing checks', async () => {
+  for (const state of ['unknown', 'unstable', 'blocked']) {
+    const {github, core} = readmeFallbackFixture(state);
+    await release.readme({github, context, core});
+    assert.equal(github.calls.some(([route]) => route.startsWith('PUT ')), false);
+    assert.equal(core.outputs.readme_status, 'pending');
+  }
+});
 /** 역할: 태그 조회가 Draft를 숨기는 API를 모사한다. 입력: 산출물·변조 옵션. 출력: 기존 Draft와 API 호출 기록. */
 function existingDraftFixture(folder, options = {}) {
   const names = ['comcigan-neo-1.1.1.apk', 'SHA256SUMS.txt', 'release-metadata.json'];
