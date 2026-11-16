@@ -3,7 +3,8 @@ package io.github.mchany.comciganneo.comcigan
 import io.github.mchany.comciganneo.model.ClassSelection
 import io.github.mchany.comciganneo.model.School
 import io.github.mchany.comciganneo.model.schoolToday
-import io.github.mchany.comciganneo.model.weekStart
+import io.github.mchany.comciganneo.model.TimetableSnapshot
+import io.github.mchany.comciganneo.model.publishedWeekStarts
 import kotlinx.coroutines.runBlocking
 import java.io.IOException
 import java.nio.charset.StandardCharsets.UTF_8
@@ -13,6 +14,38 @@ import java.nio.file.StandardOpenOption.APPEND
 import java.nio.file.StandardOpenOption.CREATE
 import java.time.Instant
 import java.time.LocalDate
+
+internal class HealthValidationFailure(message: String) : IllegalStateException(message)
+
+/** 다음 기간 미게시도 날짜를 확인하며, 날짜 경계에서는 한 번만 재조회한다. */
+internal suspend fun fetchHealthSnapshot(
+    week: Int, today: () -> LocalDate, fetch: suspend () -> TimetableSnapshot,
+): Pair<LocalDate, TimetableSnapshot> {
+    require(week in 0..1)
+    repeat(2) { attempt ->
+        val date = today()
+        val outcome: Result<TimetableSnapshot> = try {
+            Result.success(fetch())
+        } catch (error: TimetableUnavailable) {
+            if (week != 1) throw error
+            Result.failure(error)
+        }
+        val after = today()
+        if (date == after) return date to outcome.getOrThrow()
+        if (attempt == 1) throw HealthValidationFailure(
+            "DATE_BOUNDARY_UNSTABLE date=$date week=$week expected=$date actual=$after")
+    }
+    error("Unreachable health retry state")
+}
+
+/** 검사 날짜에 선택한 기간과 응답 시작일을 비교한다. */
+internal fun requirePublishedPeriod(snapshot: TimetableSnapshot, week: Int, date: LocalDate) {
+    require(week in 0..1)
+    val actual = LocalDate.parse(snapshot.weekStart)
+    val expected = snapshot.publishedWeekStarts(date).getOrNull(week)?.let(LocalDate::parse)
+        ?: throw HealthValidationFailure("EXPECTED_PERIOD_MISSING date=$date week=$week expected=none actual=$actual")
+    if (actual != expected) throw HealthValidationFailure("PERIOD_MISMATCH date=$date week=$week expected=$expected actual=$actual")
+}
 
 /** Opt-in network health check. Offline regression tests run separately. */
 /**
@@ -64,15 +97,15 @@ fun main(args: Array<String>) = runBlocking {
         for (week in 0..1) {
             runCheck("Timetable week=$week") {
                 val selection = ClassSelection(school, 1, 1)
-                val snapshot = try {
-                    client.fetch(selection, week)
+                val (date, snapshot) = try {
+                    fetchHealthSnapshot(week, ::schoolToday) { client.fetch(selection, week) }
                 } catch (error: TimetableUnavailable) {
                     if (week != 1) throw error
                     return@runCheck "다음 주 시간표 미게시 응답을 정상 판별함"
                 }
 
                 val start = LocalDate.parse(snapshot.weekStart)
-                check(start == weekStart(schoolToday(), week)) { "Timetable week did not match the requested week" }
+                requirePublishedPeriod(snapshot, week, date)
                 check(snapshot.selection == selection) { "Timetable selection did not match the request" }
                 check(snapshot.classCounts.getOrNull(selection.grade - 1)?.let { it >= selection.classNumber } == true) {
                     "Invalid class-count structure"
@@ -115,7 +148,8 @@ fun main(args: Array<String>) = runBlocking {
  * 입력: 검사 중 발생한 예외.
  * 출력: 로그와 GitHub Summary에 기록할 고정 오류 설명.
  */
-private fun failureDetail(error: Exception): String = when (error) {
+internal fun failureDetail(error: Exception): String = when (error) {
+    is HealthValidationFailure -> error.message ?: "HEALTH_VALIDATION_FAILED"
     is ComciganRateLimited -> "HTTP 429: 조회 제한 응답"
     is ComciganRequestRejected -> "HTTP 403: 요청 거부 또는 페이지 토큰 만료"
     is StructureChanged -> "서비스 프로토콜 또는 응답 형식 변경"
