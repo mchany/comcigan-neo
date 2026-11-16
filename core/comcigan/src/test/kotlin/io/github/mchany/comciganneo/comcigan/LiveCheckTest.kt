@@ -88,7 +88,7 @@ class LiveCheckTest {
     }
 
     @Test fun fetchFailuresAreNotRetriedOrReplaced() = runBlocking {
-        for (error in listOf(IOException("token-secret"),StructureChanged("key-secret"),CancellationException("cancel-secret"))) {
+        for (error in listOf(IOException("token-secret"),StructureChanged("key-secret"),CancellationException("cancel-secret"),TimetableUnavailable())) {
             var calls = 0
             val thrown = assertFailsWith<Exception> { fetchHealthSnapshot(0,{ sunday }) { calls++; throw error } }
             assertSame(error,thrown)
@@ -100,6 +100,44 @@ class LiveCheckTest {
         for (week in listOf(-1,2)) assertFailsWith<IllegalArgumentException> {
             fetchHealthSnapshot(week,{ fail("Unexpected clock read") }) { fail("Unexpected fetch") }
         }
+    }
+
+    @Test fun stableUnpublishedSecondPeriodKeepsOriginalOutcome() = runBlocking {
+        var clockReads = 0
+        var calls = 0
+        val unavailable = TimetableUnavailable()
+        val error = assertFailsWith<TimetableUnavailable> {
+            fetchHealthSnapshot(1,{ clockReads++; sunday }) { calls++; throw unavailable }
+        }
+        assertSame(unavailable,error)
+        assertEquals(1,calls)
+        assertEquals(2,clockReads)
+    }
+
+    @Test fun unpublishedPeriodAcrossMidnightIsCheckedAgain() = runBlocking {
+        val monday = sunday.plusDays(1)
+        val dates = ArrayDeque(listOf(sunday,monday,monday,monday))
+        var calls = 0
+        val current = snapshot("2026-11-23")
+        val result = fetchHealthSnapshot(1,{ dates.removeFirst() }) {
+            if (++calls==1) throw TimetableUnavailable() else current
+        }
+        assertEquals(2,calls)
+        assertEquals(monday,result.first)
+        assertSame(current,result.second)
+        requirePublishedPeriod(result.second,1,result.first)
+    }
+
+    @Test fun unpublishedRetryCannotHideAnotherDateChange() = runBlocking {
+        val dates = ArrayDeque(listOf(sunday,sunday.plusDays(1),sunday.plusDays(1),sunday.plusDays(2)))
+        var calls = 0
+        val error = assertFailsWith<HealthValidationFailure> {
+            fetchHealthSnapshot(1,{ dates.removeFirst() }) {
+                if (++calls==1) snapshot("2026-11-16") else throw TimetableUnavailable()
+            }
+        }
+        assertEquals(2,calls)
+        assertTrue(failureDetail(error).startsWith("DATE_BOUNDARY_UNSTABLE"))
     }
 
     @Test fun diagnosticsOnlyExposeControlledDatesAndIndices() {

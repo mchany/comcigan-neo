@@ -17,16 +17,21 @@ import java.time.LocalDate
 
 internal class HealthValidationFailure(message: String) : IllegalStateException(message)
 
-/** 조회 전후 한국 날짜가 같을 때만 반환하며, 날짜 경계에서는 한 번만 재조회한다. */
+/** 다음 기간 미게시도 날짜를 확인하며, 날짜 경계에서는 한 번만 재조회한다. */
 internal suspend fun fetchHealthSnapshot(
     week: Int, today: () -> LocalDate, fetch: suspend () -> TimetableSnapshot,
 ): Pair<LocalDate, TimetableSnapshot> {
     require(week in 0..1)
     repeat(2) { attempt ->
         val date = today()
-        val snapshot = fetch()
+        val outcome: Result<TimetableSnapshot> = try {
+            Result.success(fetch())
+        } catch (error: TimetableUnavailable) {
+            if (week != 1) throw error
+            Result.failure(error)
+        }
         val after = today()
-        if (date == after) return date to snapshot
+        if (date == after) return date to outcome.getOrThrow()
         if (attempt == 1) throw HealthValidationFailure(
             "DATE_BOUNDARY_UNSTABLE date=$date week=$week expected=$date actual=$after")
     }
