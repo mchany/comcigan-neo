@@ -6,6 +6,66 @@ const os = require('node:os');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 const {reportFailure} = require('./parser-health.cjs');
+
+test('invalid calendar instants, past periods and impossible search refetches cannot confirm recovery',async()=>{
+  const mutations=[
+    r=>{r.checkedAt='2026-02-30T12:00:00Z';},
+    r=>{r.steps[3].expectedStart=r.steps[3].actualStart='2020-01-06';},
+    r=>{r.steps[3].expectedStart=r.steps[3].actualStart='2026-11-16';},
+    r=>{r.steps[0].attempts[0].dateRefetches=1;},
+  ];
+  for(const mutate of mutations) await withFixture(async f=>{
+    await reportFailure(f);
+    const r=result();mutate(r);f.set(r);
+    await reportFailure({...f,context:{...context,runId:124}});
+    assert.match(f.state.issues[0].body,/RESULT_INVALID/);
+    assert.ok(!f.state.issues[0].body.includes('復구 확인됨'));
+    assert.notEqual(f.state.issues[0].title,'[Parser Health] 복구 확인 — 수동 종료 대기');
+  });
+});
+test('Sunday advances and nonconsecutive future periods remain valid',()=>{
+  const r=result();r.steps[2].referenceDate='2026-11-15';r.steps[3].referenceDate='2026-11-15';
+  r.steps[3].expectedStart=r.steps[3].actualStart='2026-11-30';
+  assert.equal(require('./parser-health-result.cjs').validateResult(r).overall,'HEALTHY');
+});
+test('closed recovery watermark blocks stale reruns and duplicate failure deliveries',async()=>{
+  await withFixture(async f=>{
+    await reportFailure(f);f.set(result());
+    await reportFailure({...f,context:{...context,runId:124}});
+    f.state.issues[0].state='closed';f.set(result('FAIL','PARSE_ERROR'));
+    await reportFailure({...f,attempt:'2'});
+    assert.equal(f.state.issues.length,1);
+    await reportFailure({...f,context:{...context,runId:125}});
+    assert.equal(f.state.issues.length,2);assert.equal(f.state.issues[0].state,'closed');
+  });
+  await withFixture(async f=>{
+    await reportFailure(f);f.state.issues[0].state='closed';await reportFailure(f);
+    assert.equal(f.state.issues.length,1);
+  });
+});
+test('newer completed Actions observations block obsolete incidents even with no prior issue',()=>withFixture(async f=>{
+  f.state.runs=[{id:124,status:'completed',conclusion:'success'}];
+  await reportFailure(f);
+  assert.equal(f.state.issues.length,0);assert.equal(f.state.historyReads,1);
+}));
+test('Actions history permission errors propagate without creating an incident',()=>withFixture(async f=>{
+  f.github.rest.actions.listWorkflowRuns=async()=>{throw new Error('HTTP 403');};
+  await assert.rejects(reportFailure(f),/HTTP 403/);
+  assert.equal(f.state.writes,0);
+}));
+test('live result CLI fails on missing, invalid and contradictory output on every branch',()=>withFixture(async f=>{
+  const cli=path.join(__dirname,'parser-health-result.cjs');
+  const run=outcome=>spawnSync(process.execPath,[cli,f.resultPath,outcome],{encoding:'utf8'});
+  f.set(result());assert.equal(run('success').status,0);
+  fs.writeFileSync(f.resultPath,'{}');assert.equal(run('success').status,1);
+  fs.unlinkSync(f.resultPath);assert.equal(run('success').status,1);
+  f.set(result());assert.equal(run('failure').status,1);
+  f.set(result('FAIL','PARSE_ERROR'));assert.equal(run('failure').status,0);
+  const workflow=fs.readFileSync(path.join(__dirname,'../.github/workflows/parser-health.yml'),'utf8');
+  assert.match(workflow,/id: result-validation/);
+  assert.match(workflow,/node tools\/parser-health-result.cjs "\$PARSER_HEALTH_RESULT" "\$PARSER_LIVE_OUTCOME"/);
+  assert.match(workflow,/actions: read/);
+}));
 test('Node validates the same wire fixture asserted by Kotlin',()=>{
   const fixture=JSON.parse(fs.readFileSync(path.join(__dirname,'../core/comcigan/src/test/resources/health-report-v1.json'),'utf8'));
   assert.equal(require('./parser-health-result.cjs').validateResult(fixture).overall,'HEALTHY');
@@ -32,21 +92,29 @@ function result(status='HEALTHY', type=null, code=null) {
 function fixture(issues=[]) {
   const directory=fs.mkdtempSync(path.join(os.tmpdir(),'health-diagnostics-'));
   const resultPath=path.join(directory,'result.json'),summaryPath=path.join(directory,'summary.md');
-  const state={issues,writes:0,pages:0};
+  const state={issues,writes:0,pages:0,runs:[],historyReads:0};
   const github={rest:{issues:{
     listForRepo:Symbol('listForRepo'),
     async create(params) { state.writes++;const issue={...params,state:'open',number:state.issues.length+1,user:{login:'github-actions[bot]'}};
       state.issues.push(issue);return {data:issue}; },
     async update(params) { state.writes++;Object.assign(state.issues.find(i=>i.number===params.issue_number),params); },
+  },actions:{
+    async listWorkflowRuns(params) {
+      assert.equal(params.workflow_id,'parser-health.yml');assert.equal(params.branch,'main');
+      assert.equal(params.event,'workflow_dispatch');assert.equal(params.status,'completed');
+      state.historyReads++;
+      return {data:{workflow_runs:state.runs}};
+    },
   }},async paginate(method,params) {
-    assert.equal(method,github.rest.issues.listForRepo);assert.equal(params.state,'open');
+    if(method===github.rest.actions.listWorkflowRuns) return (await method(params)).data.workflow_runs;
+    assert.equal(method,github.rest.issues.listForRepo);assert.ok(['open','closed'].includes(params.state));
     state.pages=Math.ceil(state.issues.length/params.per_page);
-    return state.issues.filter(i=>i.state!=='closed');
+    return state.issues.filter(i=>params.state==='closed'?i.state==='closed':i.state!=='closed');
   }};
   const f={state,github,context,resultPath,summaryPath,steps:{},attempt:'1',
     set(report) {
       fs.writeFileSync(resultPath,JSON.stringify(report));fs.writeFileSync(summaryPath,'RAW_SUMMARY_SECRET');
-      f.steps=Object.fromEntries(['checkout','java','gradle','reporting-tests','regression','live','summary'].map(n=>[n,{outcome:'success'}]));
+      f.steps=Object.fromEntries(['checkout','java','gradle','reporting-tests','regression','live','result-validation','summary'].map(n=>[n,{outcome:'success'}]));
       if (!['HEALTHY','UNPUBLISHED'].includes(report.overall)) f.steps.live.outcome='failure';
       return f;
     },

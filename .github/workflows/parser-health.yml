@@ -42,6 +42,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      actions: read
       issues: write
 
     steps:
@@ -80,6 +81,14 @@ jobs:
           ./gradlew :core:comcigan:run \
             --args="중일고등학교" \
             --console=plain
+
+      - name: Validate live parser result
+        id: result-validation
+        if: ${{ !cancelled() && (steps.live.outcome == 'success' || steps.live.outcome == 'failure') }}
+        env:
+          PARSER_HEALTH_RESULT: ${{ runner.temp }}/parser-health-result.json
+          PARSER_LIVE_OUTCOME: ${{ steps.live.outcome }}
+        run: node tools/parser-health-result.cjs "$PARSER_HEALTH_RESULT" "$PARSER_LIVE_OUTCOME"
 
       - name: Publish live parser check summary
         id: summary

@@ -6,7 +6,8 @@ const VALIDATION_CODES = ['VALIDATION_FAILED','PERIOD_CHANGED','DATE_BOUNDARY_UN
   'PERIOD_MISMATCH','INVALID_START','SELECTION_MISMATCH','INVALID_CLASS_COUNTS','INVALID_SLOT','BLANK_SUBJECT',
   'EXACT_MATCH_COUNT','INVALID_SCHOOL_CODE','NONEMPTY_SEARCH_RESULT'];
 const ENV_CODES = ['RESULT_MISSING','RESULT_INVALID','RESULT_UNREADABLE','LIVE_RESULT_MISMATCH',
-  'CHECKOUT_FAILED','JAVA_FAILED','GRADLE_FAILED','REPORTING_TESTS_FAILED','REGRESSION_FAILED','LIVE_NOT_RUN','SUMMARY_FAILED'];
+  'CHECKOUT_FAILED','JAVA_FAILED','GRADLE_FAILED','REPORTING_TESTS_FAILED','REGRESSION_FAILED','LIVE_NOT_RUN','SUMMARY_FAILED',
+  'RESULT_VALIDATION_FAILED'];
 const CODES = ['SEARCH_OK','EMPTY_SEARCH_OK','TIMETABLE_OK','CATALOG_ABSENT','AMBIGUOUS_UNPUBLISHED','NO_SLOTS','NO_LESSONS',
   'HTTP_ERROR','NETWORK_ERROR','PROTOCOL_CHANGED','RESPONSE_PARSE_FAILED','UNKNOWN_FAILURE','DEPENDENCY_FAILED',
   ...VALIDATION_CODES,...ENV_CODES];
@@ -16,7 +17,8 @@ function isDate(v) {
     new Date(v).toISOString().slice(0,10)===v;
 }
 function isInstant(v) {
-  return typeof v==='string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?Z$/.test(v) && Number.isFinite(Date.parse(v));
+  return typeof v==='string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?Z$/.test(v) &&
+    isDate(v.slice(0,10)) && Number.isFinite(Date.parse(v));
 }
 function validOutcome(s,id) {
   ensure(s && typeof s==='object' && CODES.includes(s.code));
@@ -56,6 +58,7 @@ function validateResult(r) {
     ensure(Array.isArray(s.attempts) && s.attempts.length<3);
     const attempts=s.attempts.map((a,n)=>{
       ensure(a.number===n+1 && (a.dateRefetches===0 || a.dateRefetches===1));
+      if(i<2) ensure(a.dateRefetches===0);
       validOutcome(a,s.id);ensure(a.status!=='SKIPPED');
       return {number:a.number,status:a.status,errorType:a.errorType,code:a.code,dateRefetches:a.dateRefetches,httpStatus:a.httpStatus};
     });
@@ -74,6 +77,9 @@ function validateResult(r) {
     if(hasSnapshot) {
       ensure(s.expectedStart!==null && s.expectedStart===s.actualStart);
       ensure(new Date(s.actualStart).getUTCDay()===1);
+      const reference=Date.parse(s.referenceDate);
+      const monday=reference-((new Date(reference).getUTCDay()+6)%7)*86400000;
+      ensure(Date.parse(s.actualStart)>=monday+s.week*7*86400000);
       ensure(Number.isInteger(s.slotCount) && Number.isInteger(s.lessonCount) &&
         s.slotCount>=0 && s.slotCount<=448 && s.lessonCount>=0 && s.lessonCount<=s.slotCount);
       if(s.status==='HEALTHY') ensure(s.lessonCount>0);
@@ -99,6 +105,16 @@ function environmentResult(code) {
   return {checkedAt:null,timezone:'Asia/Seoul',target:null,overall:'INDETERMINATE',
     steps:[{id:'pipeline',status:'FAIL',errorType:'ENVIRONMENT_ERROR',code,referenceDate:null,week:null,attempts:[]}]};
 }
+function loadResult(resultPath) {
+  const stat=fs.statSync(resultPath);ensure(stat.isFile() && stat.size>0 && stat.size<=65536);
+  return validateResult(JSON.parse(fs.readFileSync(resultPath,'utf8')));
+}
+function validateLiveResult(resultPath,outcome) {
+  const report=loadResult(resultPath);
+  ensure(['success','failure'].includes(outcome));
+  ensure((outcome==='success')===['HEALTHY','UNPUBLISHED'].includes(report.overall));
+  return report;
+}
 function readResult(resultPath,steps) {
   for(const [id,code] of [['checkout','CHECKOUT_FAILED'],['java','JAVA_FAILED'],['gradle','GRADLE_FAILED'],
     ['reporting-tests','REPORTING_TESTS_FAILED'],['regression','REGRESSION_FAILED'],['summary','SUMMARY_FAILED']]) {
@@ -108,13 +124,13 @@ function readResult(resultPath,steps) {
   let report;
   try {
     if(!resultPath || !fs.existsSync(resultPath)) return environmentResult('RESULT_MISSING');
-    const stat=fs.statSync(resultPath);ensure(stat.isFile() && stat.size>0 && stat.size<=65536);
-    report=validateResult(JSON.parse(fs.readFileSync(resultPath,'utf8')));
+    report=loadResult(resultPath);
   } catch(error) {
     return environmentResult(error.code==='EACCES' || error.code==='EPERM'?'RESULT_UNREADABLE':'RESULT_INVALID');
   }
   const success=['HEALTHY','UNPUBLISHED'].includes(report.overall);
   if((steps.live.outcome==='success')!==success) return environmentResult('LIVE_RESULT_MISMATCH');
+  if(steps['result-validation']?.outcome!=='success') return environmentResult('RESULT_VALIDATION_FAILED');
   return report;
 }
 function renderResult(report) {
@@ -130,4 +146,13 @@ function renderResult(report) {
   lines.push('','시도 횟수는 Health 단계 기준이며 개별 HTTP 요청 수와 다릅니다.');
   return lines.join('\n');
 }
-module.exports={IDS,TYPES,CODES,ENV_CODES,isInstant,readResult,validateResult,renderResult};
+module.exports={IDS,TYPES,CODES,ENV_CODES,isInstant,readResult,validateResult,validateLiveResult,renderResult};
+if(require.main===module) {
+  try {
+    validateLiveResult(process.argv[2],process.argv[3]);
+    console.log('Parser Health result schema and process outcome verified');
+  } catch {
+    console.error('Parser Health result is missing, invalid or inconsistent');
+    process.exitCode=1;
+  }
+}

@@ -45,7 +45,7 @@ Kotlin CLI는 기존 Markdown Summary와 schemaVersion=1 JSON을 만든다.
 - 워크플로는 shell에서 GITHUB_STEP_SUMMARY를 PARSER_SUMMARY 임시 경로로 export하고, 성공·실패 모두 후속 단계에서 Actions Summary에 게시한다.
 - JSON은 작업 중 Node 보고기가 소비한다. 원시 HTTP 본문이나 전체 빌드 로그를 이슈로 복사하지 않는다.
 
-JSON에는 checkedAt, timezone, target, overall 및 네 단계의 id/status/errorType/code/referenceDate/week/expectedStart/actualStart/httpStatus/교시·수업 수/attempts가 포함된다. 유효하지 않은 파일, 누락된 단계, 잘못된 날짜·상태 조합, 지원하지 않는 코드는 정상·복구 증거로 사용하지 않는다.
+JSON에는 checkedAt, timezone, target, overall 및 네 단계의 id/status/errorType/code/referenceDate/week/expectedStart/actualStart/httpStatus/교시·수업 수/attempts가 포함된다. 유효하지 않은 파일, 누락된 단계, 잘못된 날짜·상태 조합, 지원하지 않는 코드는 정상·복구 증거로 사용하지 않는다. 모든 실행(PR 포함)에서 별도 Node 단계로 실제 JSON과 실서버 프로세스의 종료 결과를 대조하며, 불일치하면 Actions와 배지도 실패한다.
 
 오류 메시지 문자열로 원인을 추측하지 않는다. 예외 출처와 게시 부재 근거를 발생 지점에서 기록하며, 토큰·키·원본 응답·임의 예외 메시지/cause는 출력하지 않는다. Node는 검증한 필드만 사용해 이슈 표를 만들며 원래 Summary 파일의 임의 내용을 그대로 복사하지 않는다.
 
@@ -61,7 +61,7 @@ main의 workflow_dispatch(직접 실행 또는 Cloudflare 예약 실행)만 원�
 - INDETERMINATE·환경 실패·취소·생략은 복구 증거가 아니다.
 - **이슈 종료는 수동이다. 자동 종료·재열기를 하지 않는다.** 사용자가 닫은 뒤 새 실패가 생기면 새 이슈를 만든다.
 - 이슈 전체 페이지에서 전용 마커와 github-actions[bot] 작성자를 확인한다. 사용자 이슈·PR은 덮어쓰지 않는다.
-- 동일 결과의 중복 처리는 추가 쓰기를 하지 않는다. 오래된 runId/attempt는 최신 관측을 덮지 않는다.
+- 동일 결과의 중복 처리는 추가 쓰기를 하지 않는다. 오래된 runId/attempt는 최신 관측을 덮지 않는다. 신규 발행 전 닫힌 봇 이슈의 마지막 관측과 완료된 main 예약/직접 실행 기록도 확인해 수동 종료 후 중복 보고나 과거 실행의 새 이슈 생성을 차단한다.
 - 레거시 자동 이슈는 검증 가능한 기존 실행 링크만 이관하며 임의 본문은 재사용하지 않는다.
 - concurrency: parser-health와 cancel-in-progress: false를 유지한다. API 오류는 실패로 전파하고 우회 생성·자동 쓰기 재시도를 하지 않는다.
 
@@ -78,7 +78,7 @@ main의 workflow_dispatch(직접 실행 또는 Cloudflare 예약 실행)만 원�
 
 ## Workers·배지·앱과의 호환성
 
-workflow_dispatch 입력 source(manual/scheduler)와 scheduled_time, 워크플로 파일명·job명·배지 주소를 유지한다. Workers 소스와 설정은 저장소에 없으며 배포·일정·인증 설정을 변경하지 않는다. 저장소에서 검증 가능한 기존 dispatch 입력 계약은 shell/워크플로 회귀 테스트로 확인한다. 실제 외부 Worker 배포 상태는 이 변경의 로컬 테스트로 입증하지 않는다.
+workflow_dispatch 입력 source(manual/scheduler)와 scheduled_time, 워크플로 파일명·job명·배지 주소를 유지한다. Workers 소스와 설정은 저장소에 없으며 배포·일정·인증 설정을 변경하지 않는다. 저장소에서 검증 가능한 기존 dispatch 입력 계약은 shell/워크플로 회귀 테스트로 확인한다. 실제 외부 Worker 배포 상태는 이 변경의 로컬 테스트로 입증하지 않는다. 이슈 신규 발행의 실행 순서 확인을 위해 job에 읽기 전용 actions: read 권한을 추가하며, 조회 오류 시 새 이슈 생성으로 우회하지 않는다.
 
 README 배지는 마지막 GitHub Actions 실행 결과다. 정상 미게시도 passing이며 판단 불가·네트워크·CI 환경·보고 API 오류도 failing이 될 수 있다. 한 학교·1학년 1반 샘플 검사이며 모든 학교나 실시간 서비스 상태를 보장하지 않는다.
 
@@ -108,7 +108,7 @@ checkout 실패로 스크립트가 없거나 runner 종료·job 취소·시간 �
 
 ## 2026-11-17 구현 검증
 
-- 모델·파서 JVM 테스트 102개, Node 테스트 43개 및 actionlint 통과.
+- 모델·파서 JVM 테스트 102개, Node 테스트 49개 및 actionlint 통과.
 - 실서버 정확 학교 검색·빈 검색·11월 16일/23일 시작 시간표 네 단계 HEALTHY 확인(각 18개/34개 수업).
 - 실서버 Kotlin 출력 JSON을 Node 검증기로 재검증.
 - 원격 장애 이슈 발행·갱신과 실제 Worker 배포 검증은 수행하지 않음. 모의 GitHub API와 기존 dispatch 계약으로 검증.

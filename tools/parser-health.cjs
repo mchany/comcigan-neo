@@ -68,6 +68,19 @@ async function reportFailure({github,context,steps,resultPath,attempt='1'}) {
   const issues=await github.paginate(github.rest.issues.listForRepo,{...context.repo,state:'open',per_page:100});
   const existing=issues.find(i=>!i.pull_request && i.user?.login==='github-actions[bot]' && i.body?.startsWith(MARKER));
   if(!existing && !failed) return null;
+  if(!existing) {
+    const closed=await github.paginate(github.rest.issues.listForRepo,{...context.repo,state:'closed',per_page:100});
+    for(const issue of closed) {
+      if(issue.pull_request || issue.user?.login!=='github-actions[bot]' || !issue.body?.startsWith(MARKER)) continue;
+      const watermark=previousState(issue.body);
+      if(watermark && compare(execution,watermark.latest)<=0) return null;
+    }
+    // No issue exists to store successful observations. Read completed runs before creating an incident.
+    const runs=await github.paginate(github.rest.actions.listWorkflowRuns,{...context.repo,
+      workflow_id:'parser-health.yml',branch:'main',event:'workflow_dispatch',status:'completed',per_page:100});
+    if(runs.some(run=>DECIMAL.test(String(run.id)) && BigInt(run.id)>BigInt(execution.runId) &&
+      run.status==='completed' && ['success','failure','timed_out'].includes(run.conclusion))) return null;
+  }
   const previous=previousState(existing?.body);
   if(previous && compare(execution,previous.latest)<0) return existing.number;
 
@@ -85,7 +98,7 @@ async function reportFailure({github,context,steps,resultPath,attempt='1'}) {
   const inputs=context.payload?.inputs || {};
   const metadata={sha:current.sha,source:String(inputs.source||'manual').slice(0,100),
     scheduled_time:inputs.scheduled_time?String(inputs.scheduled_time).slice(0,200):null,
-    steps:Object.fromEntries(['checkout','java','gradle','reporting-tests','regression','live','summary'].map(id=>
+    steps:Object.fromEntries(['checkout','java','gradle','reporting-tests','regression','live','result-validation','summary'].map(id=>
       [id,['success','failure','skipped','cancelled'].includes(steps[id]?.outcome)?steps[id].outcome:'unknown']))};
   const body=[MARKER,STATE_PREFIX+JSON.stringify(state)+' -->','## Parser Health 상태','',status,'',
     '[최신 실행 및 요약]('+runUrl(current)+')','',failureSection('첫 실패',state.firstFailure),'',
