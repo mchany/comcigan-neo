@@ -14,6 +14,21 @@ import java.util.ArrayDeque
 import kotlin.test.*
 
 class HealthRunnerTest {
+    @Test fun kotlinWireFormatMatchesSharedNodeContract() = runBlocking {
+        val expected = javaClass.getResourceAsStream("/health-report-v1.json")!!.bufferedReader().use { it.readText() }
+        assertEquals(Json.parseToJsonElement(expected),Json.parseToJsonElement(report().toJson()))
+    }
+    @Test fun targetCannotInjectMarkdownOrMentions() = runBlocking {
+        val target="school|@someone<script>\n`"
+        val r=runParserHealth(target,
+            { if(it==target) listOf(school.copy(name=target)) else emptyList() },
+            { selected,w->snapshot(w).copy(selection=selected) },{ date },
+            { Instant.parse("2026-11-16T03:00:00Z") },{})
+        assertTrue(r.isSuccess)
+        val text=r.toMarkdown()
+        assertFalse(text.contains("@someone"));assertFalse(text.contains("<script>"))
+        assertFalse(text.contains("school|"))
+    }
     private val date = LocalDate.parse("2026-11-16")
     private val school = School(1, "school", "region")
     private val selection = ClassSelection(school, 1, 1)
