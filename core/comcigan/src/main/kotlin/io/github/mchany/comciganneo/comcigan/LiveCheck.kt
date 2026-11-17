@@ -15,25 +15,31 @@ import java.nio.file.StandardOpenOption.CREATE
 import java.time.Instant
 import java.time.LocalDate
 
-internal class HealthValidationFailure(message: String) : IllegalStateException(message)
+internal class HealthValidationFailure(
+    message: String, val code: String = "VALIDATION_FAILED",
+    val expectedStart: String? = null, val actualStart: String? = null,
+) : IllegalStateException(message)
 
-/** 다음 기간 미게시도 날짜를 확인하며, 날짜 경계에서는 한 번만 재조회한다. */
+/** 미게시의 근거와 무관하게 날짜를 확인하며, 날짜 경계에서는 한 번만 재조회한다. */
 internal suspend fun fetchHealthSnapshot(
-    week: Int, today: () -> LocalDate, fetch: suspend () -> TimetableSnapshot,
+    week: Int, today: () -> LocalDate,
+    onDate: (LocalDate) -> Unit = {}, onRefetch: () -> Unit = {},
+    fetch: suspend () -> TimetableSnapshot,
 ): Pair<LocalDate, TimetableSnapshot> {
     require(week in 0..1)
     repeat(2) { attempt ->
         val date = today()
+        onDate(date)
         val outcome: Result<TimetableSnapshot> = try {
             Result.success(fetch())
         } catch (error: TimetableUnavailable) {
-            if (week != 1) throw error
             Result.failure(error)
         }
         val after = today()
         if (date == after) return date to outcome.getOrThrow()
         if (attempt == 1) throw HealthValidationFailure(
-            "DATE_BOUNDARY_UNSTABLE date=$date week=$week expected=$date actual=$after")
+            "DATE_BOUNDARY_UNSTABLE date=$date week=$week expected=$date actual=$after", "DATE_BOUNDARY_UNSTABLE")
+        onRefetch()
     }
     error("Unreachable health retry state")
 }
@@ -43,8 +49,10 @@ internal fun requirePublishedPeriod(snapshot: TimetableSnapshot, week: Int, date
     require(week in 0..1)
     val actual = LocalDate.parse(snapshot.weekStart)
     val expected = snapshot.publishedWeekStarts(date).getOrNull(week)?.let(LocalDate::parse)
-        ?: throw HealthValidationFailure("EXPECTED_PERIOD_MISSING date=$date week=$week expected=none actual=$actual")
-    if (actual != expected) throw HealthValidationFailure("PERIOD_MISMATCH date=$date week=$week expected=$expected actual=$actual")
+        ?: throw HealthValidationFailure("EXPECTED_PERIOD_MISSING date=$date week=$week expected=none actual=$actual",
+            "EXPECTED_PERIOD_MISSING", actualStart = actual.toString())
+    if (actual != expected) throw HealthValidationFailure("PERIOD_MISMATCH date=$date week=$week expected=$expected actual=$actual",
+        "PERIOD_MISMATCH", expected.toString(), actual.toString())
 }
 
 /** Opt-in network health check. Offline regression tests run separately. */
@@ -54,93 +62,16 @@ internal fun requirePublishedPeriod(snapshot: TimetableSnapshot, week: Int, date
  * 출력: 모든 검증이 통과하면 종료 코드 0, 검증 실패 시 예외로 종료한다.
  */
 fun main(args: Array<String>) = runBlocking {
-    val schoolName = args.firstOrNull() ?: "중일고등학교"
-    val report = mutableListOf<Triple<String, String, String>>()
     val client = ComciganClient()
-    lateinit var school: School
-
-    /**
-     * 역할: 검사 진행과 성공·실패 상태를 기록한다.
-     * 입력: 단계 이름과 검증 결과를 만드는 suspend 작업.
-     * 출력: 검증 성공 시 상세 결과 문자열을 반환하고, 실패 시 오류를 다시 전달한다.
-     */
-    suspend fun runCheck(name: String, action: suspend () -> String) {
-        report += Triple(name, "RUNNING", "검사 중")
-        val index = report.lastIndex
-        println("Checking: $name")
-        try {
-            val detail = action()
-            report[index] = Triple(name, "PASS", detail)
-            println("PASS: $detail")
-        } catch (error: Exception) {
-            report[index] = Triple(name, "FAIL", failureDetail(error))
-            println("FAIL: ${failureDetail(error)}")
-            throw error
-        }
-    }
-
-    try {
-        runCheck("Service page, protocol and exact school search") {
-            val matches = client.searchSchools(schoolName).filter { it.name == schoolName }
-            check(matches.size == 1) { "Expected exactly one exact school match" }
-            school = matches.single()
-            check(school.code > 0) { "Expected a positive school code" }
-            "정확히 일치하는 학교 1개, 유효한 학교 코드 확인 (${school.name}, ${school.region})"
-        }
-
-        runCheck("Empty school search") {
-            val results = client.searchSchools("존재하지않는학교_파서상태검사_963852741")
-            check(results.isEmpty()) { "Expected an empty school search result" }
-            "존재하지 않는 학교 검색이 빈 목록으로 반환됨"
-        }
-
-        for (week in 0..1) {
-            runCheck("Timetable week=$week") {
-                val selection = ClassSelection(school, 1, 1)
-                val (date, snapshot) = try {
-                    fetchHealthSnapshot(week, ::schoolToday) { client.fetch(selection, week) }
-                } catch (error: TimetableUnavailable) {
-                    if (week != 1) throw error
-                    return@runCheck "다음 주 시간표 미게시 응답을 정상 판별함"
-                }
-
-                val start = LocalDate.parse(snapshot.weekStart)
-                requirePublishedPeriod(snapshot, week, date)
-                check(snapshot.selection == selection) { "Timetable selection did not match the request" }
-                check(snapshot.classCounts.getOrNull(selection.grade - 1)?.let { it >= selection.classNumber } == true) {
-                    "Invalid class-count structure"
-                }
-                check(snapshot.slots.isNotEmpty()) { "Timetable has no lesson slots" }
-                check(snapshot.slots.all { slot ->
-                    val date = LocalDate.parse(slot.date)
-                    date in start..start.plusDays(6) && slot.period > 0
-                }) { "Timetable contains an invalid date or period" }
-                val lessons = snapshot.slots.mapNotNull { it.current }
-                check(lessons.isNotEmpty()) { "No lessons parsed" }
-                check(lessons.all { it.subject.isNotBlank() }) { "A parsed lesson has no subject" }
-                "시작일 $start, 학급 구조 ${snapshot.classCounts.size}개 학년, 교시 ${snapshot.slots.size}개, 수업 ${lessons.size}개"
-            }
-        }
-    } catch (error: Exception) {
-        // Preserve the failed check in the summary without exposing response bodies or credentials.
-    }
-
-    val summary = buildString {
-        appendLine("## Parser Health")
-        appendLine()
-        appendLine("Checked at ${Instant.now()}")
-        appendLine()
-        appendLine("| Check | Result | Detail |")
-        appendLine("|---|---|---|")
-        report.forEach { (name, status, detail) ->
-            appendLine("| $name | $status | $detail |")
-        }
-    }
+    val report = runParserHealth(args.firstOrNull() ?: "중일고등학교",
+        client::searchSchools, client::fetch, ::schoolToday, Instant::now) { kotlinx.coroutines.delay(it) }
+    System.getenv("PARSER_HEALTH_RESULT")?.let { writeHealthResult(Path.of(it),report) }
+    val summary = report.toMarkdown()
     print(summary)
     System.getenv("GITHUB_STEP_SUMMARY")?.let { path ->
-        Files.writeString(Path.of(path), summary, UTF_8, CREATE, APPEND)
+        Files.writeString(Path.of(path),summary,UTF_8,CREATE,APPEND)
     }
-    check(report.isNotEmpty() && report.all { it.second == "PASS" }) { "Parser health check failed" }
+    check(report.isSuccess) { "Parser health check failed; see structured results" }
 }
 
 /**

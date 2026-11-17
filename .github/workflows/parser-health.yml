@@ -42,6 +42,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      actions: read
       issues: write
 
     steps:
@@ -74,11 +75,20 @@ jobs:
         id: live
         env:
           PARSER_SUMMARY: ${{ runner.temp }}/parser-health-summary.md
+          PARSER_HEALTH_RESULT: ${{ runner.temp }}/parser-health-result.json
         run: |
           export GITHUB_STEP_SUMMARY="$PARSER_SUMMARY"
           ./gradlew :core:comcigan:run \
             --args="중일고등학교" \
             --console=plain
+
+      - name: Validate live parser result
+        id: result-validation
+        if: ${{ !cancelled() && (steps.live.outcome == 'success' || steps.live.outcome == 'failure') }}
+        env:
+          PARSER_HEALTH_RESULT: ${{ runner.temp }}/parser-health-result.json
+          PARSER_LIVE_OUTCOME: ${{ steps.live.outcome }}
+        run: node tools/parser-health-result.cjs "$PARSER_HEALTH_RESULT" "$PARSER_LIVE_OUTCOME"
 
       - name: Publish live parser check summary
         id: summary
@@ -91,18 +101,21 @@ jobs:
             cat "$PARSER_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Report parser health failure
+      - name: Report parser health status
         if: >-
-          failure() && github.repository == 'mchany/comcigan-neo' &&
+          !cancelled() && steps.checkout.outcome == 'success' &&
+          github.repository == 'mchany/comcigan-neo' &&
           github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           PARSER_STEPS: ${{ toJSON(steps) }}
           PARSER_SUMMARY: ${{ runner.temp }}/parser-health-summary.md
+          PARSER_HEALTH_RESULT: ${{ runner.temp }}/parser-health-result.json
         with:
           retries: 0
           script: |
             await require('./tools/parser-health.cjs').reportFailure({
               github, context, steps: JSON.parse(process.env.PARSER_STEPS),
-              summaryPath: process.env.PARSER_SUMMARY, attempt: process.env.GITHUB_RUN_ATTEMPT,
+              summaryPath: process.env.PARSER_SUMMARY, resultPath: process.env.PARSER_HEALTH_RESULT,
+              attempt: process.env.GITHUB_RUN_ATTEMPT,
             });

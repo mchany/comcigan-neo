@@ -39,7 +39,7 @@ internal object ComciganPublishedWeeks {
             data["오늘r"]?.let { today -> require(weeks.any { it.request == today.jsonPrimitive.int }) }
             return weeks.sortedBy { it.start }
         } catch (e: Exception) {
-            throw StructureChanged("시간표 게시 기간 목록을 읽을 수 없어요.", e)
+            throw StructureChanged("시간표 게시 기간 목록을 읽을 수 없어요.", e, StructureSource.PARSE)
         }
     }
 }

@@ -14,6 +14,8 @@ import java.util.concurrent.TimeUnit
 
 class ComciganRequestRejected : IOException("자료 조회 요청이 거부됐어요. (403)")
 class ComciganRateLimited : IOException("조회 요청이 너무 많아요. 잠시 후 다시 시도해 주세요. (429)")
+class ComciganHttpException(val statusCode: Int) : IOException("서버 연결에 실패했어요. ($statusCode)")
+class ComciganResponseException(message: String) : IOException(message)
 
 class ComciganClient internal constructor(
     private val baseUrl: String, private val http: OkHttpClient, private val today: () -> LocalDate = ::schoolToday,
@@ -35,9 +37,9 @@ class ComciganClient internal constructor(
         return http.newCall(request).execute().use { response ->
             if (response.code == 403) throw ComciganRequestRejected()
             if (response.code == 429) throw ComciganRateLimited()
-            if (!response.isSuccessful) throw IOException("서버 연결에 실패했어요. (${response.code})")
-            val bytes = response.body?.bytes() ?: throw IOException("서버 응답이 비어 있어요.")
-            if (bytes.size > 16 * 1024 * 1024) throw IOException("서버 응답이 너무 커요.")
+            if (!response.isSuccessful) throw ComciganHttpException(response.code)
+            val bytes = response.body?.bytes() ?: throw ComciganResponseException("서버 응답이 비어 있어요.")
+            if (bytes.size > 16 * 1024 * 1024) throw ComciganResponseException("서버 응답이 너무 커요.")
             bytes.toString(charset)
         }
     }
@@ -88,7 +90,8 @@ class ComciganClient internal constructor(
                 codes, selection, System.currentTimeMillis())
             // Request 1 is the official school's initial load. Discover its date/selector catalog afresh.
             val initial = read(1)
-            val expected = initial.publishedWeekStarts(date).getOrNull(week) ?: throw TimetableUnavailable()
+            val expected = initial.publishedWeekStarts(date).getOrNull(week)
+                ?: throw TimetableUnavailable(UnpublishedEvidence.CATALOG_ABSENT)
             val request = if (initial.publishedWeeks.isEmpty()) week + 1
                 else initial.publishedWeeks.single { it.start == expected }.request
             val result = if (request == 1) initial else read(request)
