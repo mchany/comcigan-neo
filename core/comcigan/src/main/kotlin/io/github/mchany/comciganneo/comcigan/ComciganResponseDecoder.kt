@@ -15,7 +15,7 @@ internal object ComciganResponseDecoder {
         val clean = text.trim('\u0000', '\r', '\n', ' ', '\t', '\uFEFF')
         val encrypted = clean.startsWith("enc1:") || clean.startsWith("enc2:") || clean.startsWith("enc5:")
         if (!encrypted) {
-            if (keyHex != null) throw StructureChanged("암호화된 시간표 응답을 받지 못했어요.")
+            if (keyHex != null) throw StructureChanged("암호화된 시간표 응답을 받지 못했어요.", source = StructureSource.PARSE)
             return clean
         }
         try {
@@ -46,8 +46,8 @@ internal object ComciganResponseDecoder {
             return Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                 .onUnmappableCharacter(CodingErrorAction.REPORT)
                 .decode(ByteBuffer.wrap(cipher.doFinal(ciphertext))).toString().trimEnd('\u0000')
-        } catch (e: StructureChanged) { throw e }
-          catch (e: Exception) { throw StructureChanged("암호화된 시간표 응답을 읽을 수 없어요.", e) }
+        } catch (e: StructureChanged) { throw e.asParseFailure() }
+          catch (e: Exception) { throw StructureChanged("암호화된 시간표 응답을 읽을 수 없어요.", e, StructureSource.PARSE) }
     }
 
     private fun hex(value: String): ByteArray = value.chunked(2).map { it.toInt(16).toByte() }.toByteArray()

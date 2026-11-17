@@ -8,8 +8,16 @@ import java.net.URLEncoder
 import java.time.LocalDate
 import java.util.Base64
 
-class StructureChanged(message: String, cause: Throwable? = null) : Exception(message, cause)
-class TimetableUnavailable : Exception("아직 게시된 시간표가 없어요.")
+enum class StructureSource { PROTOCOL, PARSE }
+class StructureChanged(
+    message: String, cause: Throwable? = null, val source: StructureSource = StructureSource.PROTOCOL,
+) : Exception(message, cause)
+internal fun StructureChanged.asParseFailure(): StructureChanged =
+    if (source == StructureSource.PARSE) this else StructureChanged(message ?: "응답 형식이 변경됐어요.", this, StructureSource.PARSE)
+
+enum class UnpublishedEvidence { AMBIGUOUS, CATALOG_ABSENT }
+class TimetableUnavailable(val evidence: UnpublishedEvidence = UnpublishedEvidence.AMBIGUOUS) :
+    Exception("아직 게시된 시간표가 없어요.")
 class TimetablePeriodChanged : Exception("시간표 조회 기간이 변경됐어요. 새로고침해 주세요.")
 
 /** Page-issued request credential. Deliberately redacted from ServiceCodes and diagnostic strings. */
@@ -101,8 +109,8 @@ object ComciganParser {
     private fun objectFrom(text: String, codes: ServiceCodes? = null): JsonObject = try {
         val clean = ComciganResponseDecoder.decode(text, codes?.responseKeyHex)
         Json.parseToJsonElement(clean).jsonObject
-    } catch (e: StructureChanged) { throw e
-    } catch (e: Exception) { throw StructureChanged("시간표 응답을 읽을 수 없어요.", e) }
+    } catch (e: StructureChanged) { throw e.asParseFailure()
+    } catch (e: Exception) { throw StructureChanged("시간표 응답을 읽을 수 없어요.", e, StructureSource.PARSE) }
 
     /**
      * 역할: 학교 검색 응답을 학교 목록으로 변환한다.
@@ -138,8 +146,8 @@ object ComciganParser {
                 fields?.decode(row[2]) ?: row[2].jsonPrimitive.content,
                 fields?.decode(row[1]) ?: row[1].jsonPrimitive.content)
         }.distinctBy { it.code }
-    } catch (e: StructureChanged) { throw e }
-      catch (e: Exception) { throw StructureChanged("학교 검색 응답 형식이 변경됐어요.", e) }
+    } catch (e: StructureChanged) { throw e.asParseFailure() }
+      catch (e: Exception) { throw StructureChanged("학교 검색 응답 형식이 변경됐어요.", e, StructureSource.PARSE) }
 
     /**
      * 역할: 시간표 응답을 수업 스냅샷으로 변환한다.
@@ -243,8 +251,8 @@ object ComciganParser {
                 data[codes.updatedField]?.jsonPrimitive?.contentOrNull,
                 fetchedAt, counts, slots, publishedWeeks = publishedWeeks)
         } catch (e: TimetableUnavailable) { throw e }
-          catch (e: StructureChanged) { throw e }
-          catch (e: IllegalArgumentException) { throw StructureChanged(e.message ?: "시간표 형식이 변경됐어요.", e) }
-          catch (e: Exception) { throw StructureChanged("시간표 응답 형식이 변경됐어요.", e) }
+          catch (e: StructureChanged) { throw e.asParseFailure() }
+          catch (e: IllegalArgumentException) { throw StructureChanged(e.message ?: "시간표 형식이 변경됐어요.", e, StructureSource.PARSE) }
+          catch (e: Exception) { throw StructureChanged("시간표 응답 형식이 변경됐어요.", e, StructureSource.PARSE) }
     }
 }

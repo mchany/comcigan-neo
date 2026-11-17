@@ -94,7 +94,7 @@ class RequestTokenTransportTest {
 
     @Test fun `500 and page request rejection do not enter a token refresh loop`() = runBlocking {
         Server { request,_ -> if(request.path=="/st") Reply(200,TokenFixtures.page()) else Reply(500,"Error") }.use { server ->
-            assertFailsWith<IOException> { server.client.searchSchools("학교") }
+            assertEquals(500, assertFailsWith<ComciganHttpException> { server.client.searchSchools("학교") }.statusCode)
             assertEquals(2,server.seen.size)
         }
         Server { _,_ -> Reply(403,"Forbidden") }.use { server ->
@@ -154,7 +154,7 @@ class RequestTokenTransportTest {
             if (request.path=="/st") Reply(200,TokenFixtures.page())
             else Reply(200,publishedBody("2026-11-09","""[[1,"26-11-09 ~ 26-11-14"]]"""))
         }.use { server ->
-            assertFailsWith<TimetableUnavailable> { server.client.fetch(selection,1) }
+            assertEquals(UnpublishedEvidence.CATALOG_ABSENT, assertFailsWith<TimetableUnavailable> { server.client.fetch(selection,1) }.evidence)
             assertEquals(listOf(1),server.seen.filter { it.path!="/st" }.map(::selector))
         }
     }
