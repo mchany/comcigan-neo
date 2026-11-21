@@ -1,0 +1,21 @@
+{
+  "version": "1.1.1",
+  "version_code": 18,
+  "source_sha": "4260ee71ae0922277ed7bcc3fbd69bae1e3a51e4",
+  "repository": "mchany/comcigan-neo",
+  "summary": "컴시간의 QnmsbChange 문자열 인코딩 도입과 시작일·일과시간 필드 이동으로 인한 학교·시간표 조회 실패 해결",
+  "apk_name": "comcigan-neo-1.1.1.apk",
+  "apk_sha256": "0459d30596511c74352b79b722370479eb916264016ac0142b79f14e111f4545",
+  "certificate_sha256": "4ec949d20e32a7b037d4c41071d162a6a014455d277a83aabaf6a274abf4e8ba",
+  "checks": [
+    "JUnit 보고서 기준 JVM 테스트 71개 통과 (NO-SOURCE 태스크 제외)",
+    "Debug·Release Lint 통과",
+    "APK 앱 ID·버전·versionCode 및 Android 8.0 이상 설정 확인",
+    "비디버그 정식 패키지 확인",
+    "설정된 나이스 인증키의 DEX 반영 확인",
+    "APK 내 개인 빌드 입력 파일 미포함 확인",
+    "UI 계측 테스트 소스 컴파일 통과 (기기 실행 미수행)",
+    "기존 배포 인증서 SHA-256 일치 및 APK 서명·정렬 검증"
+  ],
+  "run_url": "https://github.com/mchany/comcigan-neo/actions/runs/43168379375"
+}

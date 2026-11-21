@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const {execFileSync} = require('node:child_process');
+const historicalMetadata = require('./release-v1.1.1-metadata.json');
 
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const SHA = /^[0-9a-f]{40}$/;
@@ -126,7 +127,14 @@ async function metadataBytes(github, context, release) {
   const matches = [...(release.body || '').matchAll(/<!-- release-metadata:([A-Za-z0-9+/=]+) -->/g)];
   if (matches.length > 1) throw new Error('릴리즈 본문 메타데이터가 중복되었습니다.');
   if (matches.length) return Buffer.from(matches[0][1], 'base64');
-  return asset(github, context, release, 'release-metadata.json');
+  const attachment = await asset(github, context, release, 'release-metadata.json');
+  if (attachment || release.tag_name !== 'v1.1.1' || release.draft || release.prerelease) return attachment;
+
+  // The published v1.1.1 predates embedded metadata and no longer carries its JSON attachment.
+  const apks = release.assets.filter(item => item.name === historicalMetadata.apk_name);
+  if (apks.length !== 1 || apks[0].digest !== 'sha256:' + historicalMetadata.apk_sha256 ||
+      await tagSha(github, context, release.tag_name) !== historicalMetadata.source_sha) return null;
+  return Buffer.from(JSON.stringify(historicalMetadata), 'utf8');
 }
 /** 역할: 공개 메타데이터의 코드와 태그를 확인한다. 입력: 릴리즈와 첨부. 출력: Android 코드 또는 오류. */
 function previousCode(release, raw) {

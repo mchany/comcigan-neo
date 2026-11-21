@@ -263,3 +263,35 @@ test('prepare validates prior versionCode using release body without JSON attach
   });
   await assert.rejects(() => release.prepare({github, context: {...context, payload:{head_commit:{message:'chore: release 1.1.2'}}}, core:coreFixture(), metadata:{...metadata,version:'1.1.2',version_code:18}}), /버전과 versionCode는/);
 });
+
+
+test('prepare restores metadata only for the verified v1.1.1 release', async () => {
+  const source = '4260ee71ae0922277ed7bcc3fbd69bae1e3a51e4';
+  const digest = 'sha256:0459d30596511c74352b79b722370479eb916264016ac0142b79f14e111f4545';
+  const releaseContext = {...context, payload: {head_commit: {message: 'chore: release 1.1.2'}}};
+  const next = {...metadata, version: '1.1.2', version_code: 19};
+  function priorReleaseApi(sourceSha, apkDigest) {
+    return apiFixture((route, args) => {
+      if (route.includes('/git/ref/')) {
+        if (args.ref === 'tags/v1.1.1') return {object: {type: 'commit', sha: sourceSha}};
+        const missing = new Error();
+        missing.status = 404;
+        throw missing;
+      }
+      if (route === 'GET /repos/{owner}/{repo}/releases') {
+        return [{tag_name: 'v1.1.1', body: '', assets: [{name: 'comcigan-neo-1.1.1.apk', digest: apkDigest}]}];
+      }
+      throw new Error(route);
+    });
+  }
+
+  const core = coreFixture();
+  await release.prepare({github: priorReleaseApi(source, digest), context: releaseContext, core, metadata: next});
+  assert.equal(core.outputs.code, '19');
+  await assert.rejects(() => release.prepare({github: priorReleaseApi(source, digest), context: releaseContext, core: coreFixture(),
+    metadata: {...next, version_code: 18}}), /버전과 versionCode는/);
+  await assert.rejects(() => release.prepare({github: priorReleaseApi(SHA, digest), context: releaseContext, core: coreFixture(),
+    metadata: next}), /메타데이터/);
+  await assert.rejects(() => release.prepare({github: priorReleaseApi(source, 'sha256:' + '0'.repeat(64)), context: releaseContext,
+    core: coreFixture(), metadata: next}), /메타데이터/);
+});
