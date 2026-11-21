@@ -9,6 +9,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
 import java.nio.charset.Charset
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.util.concurrent.TimeUnit
 
@@ -90,16 +91,65 @@ class ComciganClient internal constructor(
                 codes, selection, System.currentTimeMillis())
             // Request 1 is the official school's initial load. Discover its date/selector catalog afresh.
             val initial = read(1)
-            val expected = initial.publishedWeekStarts(date).getOrNull(week)
-                ?: throw TimetableUnavailable(UnpublishedEvidence.CATALOG_ABSENT)
-            val request = if (initial.publishedWeeks.isEmpty()) week + 1
-                else initial.publishedWeeks.single { it.start == expected }.request
-            val result = if (request == 1) initial else read(request)
-            // A rotated list or wrong-period response must never be presented as unpublished or cached.
-            if (today() != date || result.weekStart != expected || !result.matchesPublishedWeek(week, date)) {
-                throw TimetablePeriodChanged()
+            val result = if (initial.publishedWeeks.isEmpty()) {
+                readObservedPeriod(initial, week, date, ::read)
+            } else {
+                readPublishedPeriod(initial, week, date, ::read)
             }
+            if (today() != date) throw TimetablePeriodChanged()
             result
         }
+    }
+
+    private fun readPublishedPeriod(
+        initial: TimetableSnapshot, week: Int, date: LocalDate, read: (Int) -> TimetableSnapshot,
+    ): TimetableSnapshot {
+        val start = initial.publishedWeekStarts(date).getOrNull(week)
+            ?: throw TimetableUnavailable(UnpublishedEvidence.CATALOG_ABSENT)
+        val period = initial.publishedWeeks.single { it.start == start }
+        val result = if (period.request == 1) initial else read(period.request)
+        if (result.weekStart != period.start) throw TimetablePeriodChanged()
+        if (result.publishedWeeks.isEmpty()) return result.copy(publishedWeeks = initial.publishedWeeks)
+        if (period !in result.publishedWeeks || !result.matchesPublishedWeek(week, date)) {
+            throw TimetablePeriodChanged()
+        }
+        return result
+    }
+
+    private fun readObservedPeriod(
+        initial: TimetableSnapshot, week: Int, date: LocalDate, read: (Int) -> TimetableSnapshot,
+    ): TimetableSnapshot {
+        val firstStart = LocalDate.parse(initial.weekStart)
+        if (firstStart.dayOfWeek != DayOfWeek.MONDAY || firstStart < weekStart(date)) {
+            throw TimetablePeriodChanged()
+        }
+        val first = PublishedTimetableWeek(1, initial.weekStart)
+        // The newest snapshot supplies both cache slots. Preserve the second slot when it can be verified.
+        val second = try {
+            readObservedSecondPeriod(first, date, read)
+        } catch (error: Exception) {
+            if (week == 1 || (error !is IOException && error !is TimetableUnavailable &&
+                    error !is StructureChanged && error !is TimetablePeriodChanged)) {
+                throw error
+            }
+            return initial.copy(publishedWeeks = listOf(first))
+        }
+        return if (week == 1) second else initial.copy(publishedWeeks = second.publishedWeeks)
+    }
+
+    private fun readObservedSecondPeriod(
+        first: PublishedTimetableWeek, date: LocalDate, read: (Int) -> TimetableSnapshot,
+    ): TimetableSnapshot {
+        val result = read(2)
+        val secondStart = LocalDate.parse(result.weekStart)
+        if (secondStart.dayOfWeek != DayOfWeek.MONDAY || secondStart <= LocalDate.parse(first.start)) {
+            throw TimetablePeriodChanged()
+        }
+        val observed = listOf(first, PublishedTimetableWeek(2, result.weekStart))
+        if (result.publishedWeeks.isEmpty()) return result.copy(publishedWeeks = observed)
+        if (!result.publishedWeeks.containsAll(observed) || result.publishedWeekStarts(date) != observed.map { it.start }) {
+            throw TimetablePeriodChanged()
+        }
+        return result
     }
 }

@@ -39,26 +39,21 @@ class RequestTokenTransportTest {
             http.dispatcher.executorService.shutdown()
         }
     }
-    private fun timetable(week: Int): String = TokenFixtures.encrypt("""{
-        "시작일":"${weekStart(offset=week)}","학급수":[1,1],"분리":1000,
-        "자료11":["","교사"],"자료12":["","국어"],
-        "자료14":[[],[[],[1,[1,1001]]]],"자료15":[[],[[],[1,[1,1001]]]]
-    }""")
-
     @Test fun `transmits token on search and both weeks but never on page requests`() = runBlocking {
         val selection = ClassSelection(School(29318,"테스트고","대전"),1,1)
-        var week = 0
-        Server { request,_ ->
+        val date = LocalDate.parse("2026-11-21")
+        var searching = true
+        Server(date) { request,_ ->
             if (request.path == "/st") Reply(200,TokenFixtures.page())
             else if (request.token != TokenFixtures.TOKEN) Reply(403,"Forbidden")
-            else Reply(200,if (week == 0) TokenFixtures.encrypt(TokenFixtures.SCHOOLS) else timetable(week-1))
+            else Reply(200, if (searching) TokenFixtures.encrypt(TokenFixtures.SCHOOLS)
+                else publishedBody(if (selector(request) == 1) "2026-11-16" else "2026-11-23", null))
         }.use { server ->
             assertEquals(29318,server.client.searchSchools("학교").single().code)
-            week=1
-            assertEquals(weekStart().toString(),server.client.fetch(selection,0).weekStart)
-            week=2
-            assertEquals(weekStart(offset=1).toString(),server.client.fetch(selection,1).weekStart)
-            assertEquals(listOf(null,TokenFixtures.TOKEN,TokenFixtures.TOKEN,TokenFixtures.TOKEN,TokenFixtures.TOKEN),server.seen.map { it.token })
+            searching = false
+            assertEquals("2026-11-16", server.client.fetch(selection, 0).weekStart)
+            assertEquals("2026-11-23", server.client.fetch(selection, 1).weekStart)
+            assertEquals(listOf(null,TokenFixtures.TOKEN,TokenFixtures.TOKEN,TokenFixtures.TOKEN,TokenFixtures.TOKEN,TokenFixtures.TOKEN),server.seen.map { it.token })
         }
     }
 
@@ -113,8 +108,9 @@ class RequestTokenTransportTest {
 
     private val selection = ClassSelection(School(29318,"테스트고","대전"),1,1)
     private val published = """[[7,"26-11-16 ~ 26-11-21"],[1,"26-11-09 ~ 26-11-14"]]"""
-    private fun publishedBody(start: String, catalog: String = published) = TokenFixtures.encrypt("""{
-        "시작일":"$start","일자자료":$catalog,"오늘r":1,"학급수":[1,1],"분리":1000,
+    private fun publishedBody(start: String, catalog: String? = published) = TokenFixtures.encrypt("""{
+        "시작일":"$start","학급수":[1,1],"분리":1000,
+        ${catalog?.let { """"일자자료":$it,"오늘r":1,""" }.orEmpty()}
         "자료11":["","교사"],"자료12":["","국어"],
         "자료14":[[],[[],[1,[1,1001]]]],"자료15":[[],[[],[1,[1,1001]]]]
     }""")
@@ -156,6 +152,81 @@ class RequestTokenTransportTest {
         }.use { server ->
             assertEquals(UnpublishedEvidence.CATALOG_ABSENT, assertFailsWith<TimetableUnavailable> { server.client.fetch(selection,1) }.evidence)
             assertEquals(listOf(1),server.seen.filter { it.path!="/st" }.map(::selector))
+        }
+    }
+    @Test fun `catalog-free Saturday rollout passes client validation and preserves both published dates`() = runBlocking {
+        val date = LocalDate.parse("2026-11-21")
+        Server(date) { request, _ ->
+            if (request.path == "/st") Reply(200, TokenFixtures.page())
+            else Reply(200, publishedBody(if (selector(request) == 1) "2026-11-23" else "2026-11-30", null))
+        }.use { server ->
+            val first = server.client.fetch(selection, 0).copy(fetchedAt = 1)
+            val second = server.client.fetch(selection, 1).copy(fetchedAt = 2)
+            assertEquals("2026-11-23", first.weekStart)
+            assertEquals("2026-11-30", second.weekStart)
+            assertEquals(listOf(1, 2, 1, 2), server.seen.filter { it.path != "/st" }.map(::selector))
+            requirePublishedPeriod(first, 0, date)
+            requirePublishedPeriod(second, 1, date)
+            assertEquals(first.weekStart, cachedTimetableSnapshot(listOf(first, second), selection, 0, date)?.weekStart)
+            assertEquals(second.weekStart, cachedTimetableSnapshot(listOf(first, second), selection, 1, date)?.weekStart)
+        }
+    }
+
+    @Test fun `catalog-free periods must advance to a later Monday and retry at most once`() = runBlocking {
+        for (second in listOf("2026-11-23", "2026-11-16", "2026-11-24")) {
+            Server(LocalDate.parse("2026-11-21")) { request, _ ->
+                if (request.path == "/st") Reply(200, TokenFixtures.page())
+                else Reply(200, publishedBody(if (selector(request) == 1) "2026-11-23" else second, null))
+            }.use { server ->
+                assertFailsWith<TimetablePeriodChanged> { server.client.fetch(selection, 1) }
+                assertEquals(listOf(1, 2, 1, 2), server.seen.filter { it.path != "/st" }.map(::selector))
+            }
+        }
+    }
+
+    @Test fun `a second response without a catalog uses the initial catalog mapping`() = runBlocking {
+        val date = LocalDate.parse("2026-11-08")
+        Server(date) { request, _ ->
+            when {
+                request.path == "/st" -> Reply(200, TokenFixtures.page())
+                selector(request) == 1 -> Reply(200, publishedBody("2026-11-09"))
+                else -> Reply(200, publishedBody("2026-11-16", null))
+            }
+        }.use { server ->
+            val second = server.client.fetch(selection, 1)
+            assertEquals("2026-11-16", second.weekStart)
+            assertEquals(listOf(1, 7), server.seen.filter { it.path != "/st" }.map(::selector))
+            requirePublishedPeriod(second, 1, date)
+        }
+    }
+    @Test fun `refreshing the first period retains a confirmed second period in cache`() = runBlocking {
+        val date = LocalDate.parse("2026-11-21")
+        Server(date) { request, _ ->
+            if (request.path == "/st") Reply(200, TokenFixtures.page())
+            else Reply(200, publishedBody(if (selector(request) == 1) "2026-11-23" else "2026-11-30", null))
+        }.use { server ->
+            val second = server.client.fetch(selection, 1).copy(fetchedAt = 1)
+            val newerFirst = server.client.fetch(selection, 0).copy(fetchedAt = 2)
+            val cached = cachedTimetableSnapshot(listOf(second, newerFirst), selection, 1, date)
+            assertEquals("2026-11-30", cached?.weekStart)
+        }
+    }
+
+    @Test fun `an optional second period cannot block the first period or retry a 429`() = runBlocking {
+        val date = LocalDate.parse("2026-11-21")
+        Server(date) { request, _ ->
+            when {
+                request.path == "/st" -> Reply(200, TokenFixtures.page())
+                selector(request) == 1 -> Reply(200, publishedBody("2026-11-23", null))
+                else -> Reply(429, "Too Many Requests")
+            }
+        }.use { server ->
+            val first = server.client.fetch(selection, 0)
+            assertEquals("2026-11-23", first.weekStart)
+            assertEquals(listOf("2026-11-23"), first.publishedWeekStarts(date))
+            assertFailsWith<ComciganRateLimited> { server.client.fetch(selection, 1) }
+            assertEquals(listOf(1, 2, 1, 2), server.seen.filter { it.path != "/st" }.map(::selector))
+            assertEquals(1, server.seen.count { it.path == "/st" })
         }
     }
 }
