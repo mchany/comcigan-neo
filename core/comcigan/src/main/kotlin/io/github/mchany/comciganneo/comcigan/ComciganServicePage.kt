@@ -14,7 +14,7 @@ internal object ComciganServicePage {
         """/\*\s*hour-(?:obfuscated-v2|ajax-obfuscated-v1)\s*\*/\s*\(function\(a,k\)\{.*?\}\)\((\[\[.*?\]\]),\s*(\d+)\s*\);""",
         RegexOption.DOT_MATCHES_ALL,
     )
-    private val functionDeclaration = Regex("""\bfunction\s+($SCRIPT_IDENTIFIER)\s*\([^)]*\)\s*\{""")
+    private val functionDeclaration = Regex("""\bfunction\s+($SCRIPT_IDENTIFIER)\s*\(([^)]*)\)\s*\{""")
     private val ajaxOptions = Regex(
         """(?:\$|jQuery)\s*\.\s*ajax\s*\(\s*\{(.*?)\}\s*\)\s*;\s*\}""", RegexOption.DOT_MATCHES_ALL,
     )
@@ -26,8 +26,23 @@ internal object ComciganServicePage {
     )
     private val timetableRequest = Regex(endpoint + """btoa\([^;{}]*?\+\s*$suffix\s*\)\s*(?=,|$)""")
     private val legacyPrefix = Regex("""\bsc_data\(\s*'([0-9]+)_""")
+    private const val identifierPath = """$SCRIPT_IDENTIFIER(?:\s*\.\s*$SCRIPT_IDENTIFIER)*"""
+    private val schoolListCall = Regex(
+        """(?<![\p{L}\p{N}_$.])($SCRIPT_IDENTIFIER)\s*\(\s*$identifierPath\s*\.\s*학교검색\s*(?=[,)])""",
+    )
+    private const val formulaEnd =
+        """(?=\s*(?:[;,)}]|</script>|\z)|[ \t]*[\r\n](?!\s*(?:[-+*/%&|^=<>?:.(\[`]|(?:in|instanceof)\b)))"""
+    private val schoolCodeFormula = Regex(
+        """(?<![\p{L}\p{N}_$.])Math\s*\.\s*floor\s*\(\s*($identifierPath)""" +
+            """\s*\[\s*i\s*]\s*\[\s*0\s*]\s*/\s*([0-9]+)\s*\)\s*\+\s*([0-9]+)$formulaEnd""",
+    )
+    private val rendererBodyToken = Regex(
+        """//[^\r\n]*|/\*[\s\S]*?\*/|"(?:[^"\\\r\n]++|\\[\s\S])*+"|'(?:[^'\\\r\n]++|\\[\s\S])*+'|""" +
+            """`(?:[^`\\]++|\\[\s\S])*+`|[{}]""",
+    )
+    private const val schoolCodeIndexChanged = "학교 코드 위치 형식이 변경됐어요."
 
-    private data class ScriptFunction(val name: String, val body: String)
+    private data class ScriptFunction(val name: String, val body: String, val firstParameter: String)
 
     private data class AjaxRequest(val functionName: String, val options: String, val url: MatchResult) {
         val endpoint: String get() = url.groups["endpoint"]!!.value
@@ -38,8 +53,41 @@ internal object ComciganServicePage {
         val declarations = functionDeclaration.findAll(source).toList()
         return declarations.mapIndexed { index, declaration ->
             val nextStart = declarations.getOrNull(index + 1)?.range?.first ?: source.length
-            ScriptFunction(declaration.groupValues[1], source.substring(declaration.range.last + 1, nextStart))
+            val firstParameter = declaration.groupValues[2].substringBefore(',').trim()
+            ScriptFunction(declaration.groupValues[1], source.substring(declaration.range.last + 1, nextStart), firstParameter)
         }
+    }
+
+    private fun rendererBody(section: String): String? {
+        var depth = 1
+        for (token in rendererBodyToken.findAll(section)) {
+            when (token.value) {
+                "{" -> depth++
+                "}" -> if (--depth == 0) return section.substring(0, token.range.first)
+            }
+        }
+        return null
+    }
+
+    private fun schoolCodeIndex(source: String, functions: List<ScriptFunction>): Pair<Int, Int> {
+        val direct = schoolCodeFormula.findAll(source).filter { match ->
+            val rows = match.groupValues[1]
+            rows == "학교명단" || rows.substringAfterLast('.', "").trim() == "학교검색"
+        }
+        // A generic parameter is a school list when its caller passes the search result array.
+        val renderers = schoolListCall.findAll(source).map { it.groupValues[1] }.toSet()
+        val aliases = functions.asSequence().filter { it.name in renderers }.flatMap { function ->
+            val body = rendererBody(function.body) ?: return@flatMap emptySequence()
+            schoolCodeFormula.findAll(body).filter { it.groupValues[1] == function.firstParameter }
+        }
+        return (direct + aliases).map { match ->
+            val divisor = match.groupValues[2].toIntOrNull()
+            val offset = match.groupValues[3].toIntOrNull()
+            if (divisor == null || divisor <= 0 || offset == null || offset !in 0..64) {
+                throw StructureChanged(schoolCodeIndexChanged)
+            }
+            divisor to offset
+        }.distinct().take(2).toList().singleOrNull() ?: throw StructureChanged(schoolCodeIndexChanged)
     }
 
     private fun timetablePrefix(
@@ -172,15 +220,7 @@ internal object ComciganServicePage {
         val encrypted = source.contains("CryptoJS.AES.decrypt")
         if (encodedSearch && !encrypted) throw StructureChanged("암호화 응답 처리 형식이 변경됐어요.")
         val responseKey = if (encrypted) key(source) else null
-        val schoolIndex = if (encrypted) Regex(
-            """Math\.floor\(\s*학교명단\[i\]\[0\]\s*/\s*(\d+)\s*\)\s*\+\s*(\d+)"""
-        ).find(source) ?: throw StructureChanged("학교 코드 위치 형식이 변경됐어요.") else null
-        val divisor = schoolIndex?.groupValues?.get(1)?.toIntOrNull()
-        val offset = if (schoolIndex == null) 2 else schoolIndex.groupValues[2].toIntOrNull()
-            ?: throw StructureChanged("학교 코드 위치 형식이 변경됐어요.")
-        if (encrypted && (divisor == null || divisor <= 0 || offset !in 0..64)) {
-            throw StructureChanged("학교 코드 위치 형식이 변경됐어요.")
-        }
+        val (divisor, offset) = if (encrypted) schoolCodeIndex(source, functions) else null to 2
         return ServiceCodes(
             searchRoute,
             timetablePrefix(source, functions, timetable?.functionName, numericVersion),
