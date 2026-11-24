@@ -3,6 +3,8 @@ package io.github.mchany.comciganneo.comcigan
 import kotlin.test.*
 import kotlinx.serialization.json.*
 import io.github.mchany.comciganneo.model.*
+import java.net.URLDecoder
+import java.util.Base64
 
 class EncodedFieldsTest {
     private val decoder = """
@@ -25,6 +27,81 @@ class EncodedFieldsTest {
      * 출력: 고정된 합성 서비스 페이지.
      */
     private fun page() = TokenFixtures.page().replace("da1=H시간표.자료13;","da1=QnmsbChange(H시간표.자료13);") + decoder
+
+    private val renamedFields = mapOf(
+        "자료11" to "Teacher7", "자료12" to "Subject8", "자료13" to "Updated9",
+        "자료14" to "Current4", "자료15" to "Original5", "자료901" to "Start6", "자료902" to "Times7",
+    )
+    private val timetableData = """{"자료901":"eVVLB2ZUSBx7XA==","자료902":["09:00"],"자료13":"eVVLB2ZUSBx6VFkAeV9KBXFQTw==",
+        "학급수":[1,1],"분리":1000,"자료11":["","+tbC1mE="],"자료12":[0,"95O+4Q=="],
+        "자료14":[[],[[],[1,[1,1001]]]],"자료15":[[],[[],[1,[1,1001]]]]}"""
+
+    private fun renameFields(source: String) =
+        renamedFields.entries.fold(source) { text, (old, new) -> text.replace(old, new) }
+
+    private fun numericPage() = renameFields(page())
+        .replace("QAjaxSchool", "findSchool7")
+        .replace("QAjaxTimetable", "requestTable8")
+        .replace("QnmsbChange", "decodeText9")
+        .replace("sc_data", "loadTable1")
+        .replace("_enc5", "_4317") + """
+
+        function loadTable1(sc, sc2, r, nw) {
+            var da1='0';
+            requestTable8(sc, sc2, da1, r, function(data) {});
+        }
+        """.trimIndent()
+
+    @Test fun `renamed numeric protocol builds requests and parses authenticated results`() {
+        val codes = ComciganParser.serviceCodes(numericPage())
+        assertEquals("4317", codes.responseFormat)
+        assertEquals(TokenFixtures.TOKEN, codes.requestToken?.headerValue())
+        fun payload(path: String) =
+            Base64.getDecoder().decode(URLDecoder.decode(path.substringAfter('?'), "UTF-8")).decodeToString()
+        assertEquals("321l%ED%95%99%EA%B5%90_4317", payload(codes.searchPath("학교")))
+        assertEquals("98765_123_0_7_4317", payload(codes.timetableRequestPath(123, 7)))
+
+        val search = """{"학교검색":[[12694,"ipPGmw==","ipPGmw==","ignored","eldK",0],
+            [0,"알림","없으면 추가 검색하세요","ew=="]]}"""
+        val school = ComciganParser.schools(TokenFixtures.encrypt(search, "4317"), codes).single()
+        assertEquals(School(123, "지역", "지역"), school)
+        assertTrue(ComciganParser.schools(TokenFixtures.encrypt("""{"학교검색":[]}""", "4317"), codes).isEmpty())
+        val selection = ClassSelection(school, 1, 1)
+        val snapshot = ComciganParser.timetable(TokenFixtures.encrypt(renameFields(timetableData), "4317"), codes, selection, 1)
+        assertEquals("2026-11-09", snapshot.weekStart)
+        val slot = snapshot.slots.single()
+        assertEquals("수학", slot.current?.subject)
+        assertEquals("교사*", slot.current?.teacher)
+        assertEquals("09:00", slot.startTime)
+    }
+
+    @Test fun `rejects ambiguous or mismatched numeric request grammar`() {
+        val source = numericPage()
+        for (invalid in listOf(
+            source.replace("r+'_4317'", "r+'_4318'"),
+            source.replace("r+'_4317'", "r+'_4317'+extra"),
+            source.replace("./765432?'+btoa", "./999999?'+btoa"),
+            source.replace("loadTable1('98765_',", "unrelated('98765_',"),
+            source + "\nloadTable1('98766_',sc,1,'0');",
+            source.replace("fatal:true", "fatal:false"),
+            source.replace("Start6)", "Start6())"),
+            source + "\nvar other=new Date(decodeText9(자료.Other8));",
+        )) {
+            val error = assertFailsWith<StructureChanged> { ComciganParser.serviceCodes(invalid) }
+            assertEquals(StructureSource.PROTOCOL, error.source)
+        }
+    }
+
+    @Test fun `rejects numeric responses with a different version or an altered version tag`() {
+        val source = numericPage()
+        val codes = ComciganParser.serviceCodes(source)
+        val empty = """{"학교검색":[]}"""
+        assertFailsWith<StructureChanged> { ComciganParser.schools(TokenFixtures.encrypt(empty, "4318"), codes) }
+        val spoofed = TokenFixtures.encrypt(empty, "4318").replaceFirst("4318:", "4317:")
+        val error = assertFailsWith<StructureChanged> { ComciganParser.schools(spoofed, codes) }
+        assertEquals(StructureSource.PARSE, error.source)
+        assertTrue(error.message.orEmpty().contains("무결성"))
+    }
 
     /**
      * 역할: 새 래퍼가 있는 서비스 페이지와 인코딩된 학교 코드의 호환을 검증한다.
@@ -64,7 +141,7 @@ class EncodedFieldsTest {
      */
     @Test fun rejectsUnknownGrammarAndAmbiguousFields() {
         val source = page()
-        for ((old,new) in listOf("fatal:true" to "fatal:false","'euc-kr'" to "'utf-8'","^key.charCodeAt" to "+key.charCodeAt","75,101,121,49" to "256","75,101,121,49" to "evil()","자료901" to "missing")) {
+        for ((old,new) in listOf("fatal:true" to "fatal:false","'euc-kr'" to "'utf-8'","^key.charCodeAt" to "+key.charCodeAt","75,101,121,49" to "256","75,101,121,49" to "evil()","자료901" to "missing()")) {
             assertFailsWith<StructureChanged> { ComciganParser.serviceCodes(source.replace(old,new)) }
         }
         assertFailsWith<StructureChanged> { ComciganParser.serviceCodes(source+decoder) }
@@ -85,9 +162,7 @@ class EncodedFieldsTest {
      */
     @Test fun restoresTimetableAndPreservesInput() {
         val codes = ComciganParser.serviceCodes(page())
-        val data = """{"자료901":"eVVLB2ZUSBx7XA==","자료902":["09:00"],"자료13":"eVVLB2ZUSBx6VFkAeV9KBXFQTw==",
-            "학급수":[1,1],"분리":1000,"자료11":["","+tbC1mE="],"자료12":[0,"95O+4Q=="],
-            "자료14":[[],[[],[1,[1,1001]]]],"자료15":[[],[[],[1,[1,1001]]]]}"""
+        val data = timetableData
         val json = Json.parseToJsonElement(data).jsonObject
         val before = json.toString()
         val restored = codes.textFields!!.normalize(json,codes)

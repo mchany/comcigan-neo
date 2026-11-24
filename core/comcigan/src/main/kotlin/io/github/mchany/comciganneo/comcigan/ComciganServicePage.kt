@@ -4,6 +4,9 @@ package io.github.mchany.comciganneo.comcigan
 
 import kotlinx.serialization.json.*
 
+internal const val SCRIPT_IDENTIFIER = """[\p{L}_$][\p{L}\p{N}_$]*"""
+internal const val SERVICE_FIELD = """(?:자료[0-9]+|[A-Za-z_$][A-Za-z0-9_$]*)"""
+
 /** Reads known data expressions only. Never evaluates remote JavaScript. */
 internal object ComciganServicePage {
     private val marker = Regex("""/\*\s*hour-(?:obfuscated-v2|ajax-obfuscated-v1)\s*\*/""")
@@ -11,6 +14,57 @@ internal object ComciganServicePage {
         """/\*\s*hour-(?:obfuscated-v2|ajax-obfuscated-v1)\s*\*/\s*\(function\(a,k\)\{.*?\}\)\((\[\[.*?\]\]),\s*(\d+)\s*\);""",
         RegexOption.DOT_MATCHES_ALL,
     )
+    private val functionDeclaration = Regex("""\bfunction\s+($SCRIPT_IDENTIFIER)\s*\([^)]*\)\s*\{""")
+    private val ajaxOptions = Regex(
+        """(?:\$|jQuery)\s*\.\s*ajax\s*\(\s*\{(.*?)\}\s*\)\s*;\s*\}""", RegexOption.DOT_MATCHES_ALL,
+    )
+    private const val endpoint = """\burl\s*:\s*(?<urlquote>['"])\.(?<endpoint>/[0-9]+)\?\k<urlquote>\s*\+\s*"""
+    private const val suffix = """(?<suffixquote>['"])_(?<format>$SERVICE_RESPONSE_VERSION)\k<suffixquote>"""
+    private val searchRequest = Regex(
+        endpoint + """encodeURIComponent\(\s*btoa\(\s*(?<prefixquote>['"])(?<prefix>[0-9]+l)\k<prefixquote>""" +
+            """\s*\+\s*encodeURIComponent\(\s*sc\s*\)\s*\+\s*$suffix\s*\)\s*\)\s*(?=,|$)""",
+    )
+    private val timetableRequest = Regex(endpoint + """btoa\([^;{}]*?\+\s*$suffix\s*\)\s*(?=,|$)""")
+    private val legacyPrefix = Regex("""\bsc_data\(\s*'([0-9]+)_""")
+
+    private data class ScriptFunction(val name: String, val body: String)
+
+    private data class AjaxRequest(val functionName: String, val options: String, val url: MatchResult) {
+        val endpoint: String get() = url.groups["endpoint"]!!.value
+        val format: String get() = url.groups["format"]!!.value
+    }
+
+    private fun functions(source: String): List<ScriptFunction> {
+        val declarations = functionDeclaration.findAll(source).toList()
+        return declarations.mapIndexed { index, declaration ->
+            val nextStart = declarations.getOrNull(index + 1)?.range?.first ?: source.length
+            ScriptFunction(declaration.groupValues[1], source.substring(declaration.range.last + 1, nextStart))
+        }
+    }
+
+    private fun timetablePrefix(
+        source: String, functions: List<ScriptFunction>, requestName: String?, numericVersion: Boolean,
+    ): String {
+        val prefixes = mutableSetOf<String>()
+        if (requestName != null) {
+            val call = Regex(
+                """(?<![\p{L}\p{N}_$.])${Regex.escape(requestName)}\s*\(\s*sc\s*,\s*sc2\s*,\s*da1\s*,\s*r\s*,""",
+            )
+            for ((name, body) in functions) {
+                if (!call.containsMatchIn(body)) continue
+                val prefixCall = Regex(
+                    """(?<![\p{L}\p{N}_$.])${Regex.escape(name)}\s*\(\s*(['"])([0-9]+)_\1\s*,""",
+                )
+                prefixCall.findAll(source).mapTo(prefixes) { it.groupValues[2] }
+            }
+        }
+        if (prefixes.isEmpty() && !numericVersion) {
+            return legacyPrefix.find(source)?.groupValues?.get(1)
+                ?: throw StructureChanged("컴시간 페이지의 요청 코드 형식이 변경됐어요.")
+        }
+        return prefixes.singleOrNull()
+            ?: throw StructureChanged("컴시간 페이지의 요청 코드 형식이 변경됐어요.")
+    }
 
     private fun readablePage(page: String): String {
         var source = page
@@ -89,27 +143,32 @@ internal object ComciganServicePage {
 
     fun codes(page: String): ServiceCodes {
         val source = readablePage(page)
-        fun capture(name: String, pattern: String, text: String = source): String =
-            Regex(pattern).find(text)?.groupValues?.get(1)
+        fun capture(name: String, pattern: String): String =
+            Regex(pattern).find(source)?.groupValues?.get(1)
                 ?: throw StructureChanged("컴시간 페이지의 $name 형식이 변경됐어요.")
-        fun ajax(name: String): String = Regex(
-            """function\s+$name\s*\([^)]*\)\s*\{(.*?)\}\s*\)\s*;\s*\}""", RegexOption.DOT_MATCHES_ALL,
-        ).find(source)?.groupValues?.get(1) ?: throw StructureChanged("컴시간 페이지의 요청 함수 형식이 변경됐어요.")
-        val encodedSearch = source.contains("function QAjaxSchool")
-        var token: HourRequestToken? = null
-        val searchRoute = if (encodedSearch) {
-            val school = ajax("QAjaxSchool")
-            val endpoint = capture("검색 경로", """url\s*:\s*['"]\.(/\d+\?)['"]""", school)
-            val prefix = capture("검색 요청 코드",
-                """btoa\(\s*['"](\d+l)['"]\s*\+\s*encodeURIComponent\(\s*sc\s*\)\s*\+\s*['"]_enc5['"]\s*\)""", school)
-            val timetable = ajax("QAjaxTimetable")
-            if (capture("시간표 경로", """url\s*:\s*['"]\.(/\d+\?)['"]""", timetable) != endpoint ||
-                !Regex("""['"]_enc5['"]""").containsMatchIn(timetable)) {
-                throw StructureChanged("시간표 요청 형식이 변경됐어요.")
-            }
-            token = requestToken(source, school, timetable)
-            endpoint + prefix
-        } else capture("검색 경로", """\.(/\d+\?\d+l)""")
+        val functions = functions(source)
+        val calls = functions.flatMap { (name, body) ->
+            ajaxOptions.findAll(body).map { name to it.groupValues[1] }.toList()
+        }
+        fun requests(pattern: Regex) = calls.flatMap { (name, options) ->
+            pattern.findAll(options).map { AjaxRequest(name, options, it) }.toList()
+        }
+        val searchRequests = requests(searchRequest)
+        val timetableRequests = requests(timetableRequest)
+        val encodedSearch = searchRequests.isNotEmpty() || timetableRequests.isNotEmpty() ||
+            functions.any { it.name == "QAjaxSchool" || it.name == "QAjaxTimetable" }
+        val school = searchRequests.singleOrNull()
+        val timetable = timetableRequests.singleOrNull()
+        if (encodedSearch && (school == null || timetable == null || school.functionName == timetable.functionName ||
+                school.endpoint != timetable.endpoint || school.format != timetable.format)) {
+            throw StructureChanged("컴시간 페이지의 검색 또는 시간표 요청 형식이 변경됐어요.")
+        }
+        val format = school?.format ?: "enc2"
+        val numericVersion = format.all { it in '0'..'9' }
+        val searchRoute = school?.let {
+            it.endpoint + "?" + it.url.groups["prefix"]!!.value
+        } ?: capture("검색 경로", """\.(/\d+\?\d+l)""")
+        val token = if (school != null && timetable != null) requestToken(source, school.options, timetable.options) else null
         val encrypted = source.contains("CryptoJS.AES.decrypt")
         if (encodedSearch && !encrypted) throw StructureChanged("암호화 응답 처리 형식이 변경됐어요.")
         val responseKey = if (encrypted) key(source) else null
@@ -124,14 +183,14 @@ internal object ComciganServicePage {
         }
         return ServiceCodes(
             searchRoute,
-            capture("요청 코드", """sc_data\(\s*'(\d+)_"""),
-            "자료" + capture("교사", """성명\s*=\s*(?:Q성명\(\s*)?자료\.자료(\d+)"""),
-            "자료" + capture("과목", """자료\.자료(\d+)\[sb\]"""),
-            "자료" + capture("갱신 시각", """=\s*(?:QnmsbChange\(\s*)?H시간표\.자료(\d+)"""),
-            "자료" + capture("현재 시간표", """일일자료\s*=\s*Q자료\(\s*자료\.자료(\d+)"""),
-            "자료" + capture("원본 시간표", """원자료\s*=\s*Q자료\(\s*자료\.자료(\d+)"""),
-            responseKey, divisor, offset, if (encodedSearch) "enc5" else "enc2", encodedSearch, token,
-            EncodedTextFields.parse(source),
+            timetablePrefix(source, functions, timetable?.functionName, numericVersion),
+            capture("교사", """(?<![\p{L}\p{N}_$])성명\s*=\s*(?:$SCRIPT_IDENTIFIER\s*\(\s*)?자료\.($SERVICE_FIELD)\s*\[\s*th\s*\]"""),
+            capture("과목", """자료\.($SERVICE_FIELD)\s*\[\s*sb\s*\]"""),
+            capture("갱신 시각", """\bda1\s*=\s*(?:$SCRIPT_IDENTIFIER\s*\(\s*)?H시간표\.($SERVICE_FIELD)(?![\p{L}\p{N}_$])"""),
+            capture("현재 시간표", """(?<![\p{L}\p{N}_$])일일자료\s*=\s*Q자료\(\s*자료\.($SERVICE_FIELD)\s*\["""),
+            capture("원본 시간표", """(?<![\p{L}\p{N}_$])원자료\s*=\s*Q자료\(\s*자료\.($SERVICE_FIELD)\s*\["""),
+            responseKey, divisor, offset, format, encodedSearch, token,
+            EncodedTextFields.parse(source, required = numericVersion),
         )
     }
 }

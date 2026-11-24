@@ -9,11 +9,16 @@ import javax.crypto.Mac
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
+internal const val SERVICE_RESPONSE_VERSION = "(?:enc)?[0-9]+"
+
 /** Implements the public service page's authenticated response format without executing JavaScript. */
 internal object ComciganResponseDecoder {
-    fun decode(text: String, keyHex: String?): String {
+    private val version = Regex(SERVICE_RESPONSE_VERSION)
+
+    fun decode(text: String, keyHex: String?, expectedFormat: String? = null): String {
         val clean = text.trim('\u0000', '\r', '\n', ' ', '\t', '\uFEFF')
-        val encrypted = clean.startsWith("enc1:") || clean.startsWith("enc2:") || clean.startsWith("enc5:")
+        val format = clean.substringBefore(':')
+        val encrypted = format.length < clean.length && version.matches(format)
         if (!encrypted) {
             if (keyHex != null) throw StructureChanged("암호화된 시간표 응답을 받지 못했어요.", source = StructureSource.PARSE)
             return clean
@@ -24,7 +29,7 @@ internal object ComciganResponseDecoder {
             require(parts.size == 4)
             val key = hex(keyHex)
             val binary = parts.drop(1).map { value ->
-                if (parts[0] == "enc2" || parts[0] == "enc5") {
+                if (format != "enc1") {
                     require(value.isNotEmpty())
                     Base64.getDecoder().decode(value).also {
                         require(Base64.getEncoder().encodeToString(it) == value)
@@ -40,6 +45,8 @@ internal object ComciganResponseDecoder {
             val mac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(authenticationKey, "HmacSHA256")) }
             val expected = mac.doFinal(parts.take(3).joinToString(":").toByteArray(Charsets.UTF_8))
             if (!MessageDigest.isEqual(expected, tag)) throw StructureChanged("시간표 응답의 무결성 검증에 실패했어요.")
+            // Authenticated legacy hex envelopes are still accepted by the service page.
+            if (format != "enc1" && format != expectedFormat) throw StructureChanged("시간표 응답 버전이 변경됐어요.")
             val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding").apply {
                 init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv))
             }
