@@ -107,7 +107,7 @@ object ComciganParser {
      * 출력: JsonObject 값.
      */
     private fun objectFrom(text: String, codes: ServiceCodes? = null): JsonObject = try {
-        val clean = ComciganResponseDecoder.decode(text, codes?.responseKeyHex)
+        val clean = ComciganResponseDecoder.decode(text, codes?.responseKeyHex, codes?.responseFormat)
         Json.parseToJsonElement(clean).jsonObject
     } catch (e: StructureChanged) { throw e.asParseFailure()
     } catch (e: Exception) { throw StructureChanged("시간표 응답을 읽을 수 없어요.", e, StructureSource.PARSE) }

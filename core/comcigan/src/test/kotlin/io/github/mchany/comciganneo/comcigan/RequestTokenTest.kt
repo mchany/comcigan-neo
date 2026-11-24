@@ -29,14 +29,14 @@ internal object TokenFixtures {
         var key=CryptoJS.enc.Hex.parse('000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f');
         CryptoJS.AES.decrypt({ciphertext:binary[2]},key);
     """.trimIndent()
-    fun encrypt(json: String): String {
+    fun encrypt(json: String, format: String = "enc5"): String {
         // Transport fixtures only; crypto correctness is covered by independent fixed .NET vectors.
         val iv = ByteArray(16) { it.toByte() }
         val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding").apply {
             init(Cipher.ENCRYPT_MODE,SecretKeySpec(key,"AES"),IvParameterSpec(iv))
         }
         val b64 = Base64.getEncoder()
-        val body = "enc5:" + b64.encodeToString(iv) + ":" + b64.encodeToString(cipher.doFinal(json.toByteArray(Charsets.UTF_8)))
+        val body = "$format:" + b64.encodeToString(iv) + ":" + b64.encodeToString(cipher.doFinal(json.toByteArray(Charsets.UTF_8)))
         val mac = Mac.getInstance("HmacSHA256").apply {
             init(SecretKeySpec(MessageDigest.getInstance("SHA-256").digest(key),"HmacSHA256"))
         }
@@ -82,6 +82,18 @@ class RequestTokenTest {
         assertFailsWith<StructureChanged> { ComciganParser.serviceCodes(bad) }
         val duplicate = TokenFixtures.page().replace("headers:{", "headers:{'X-Hour-Token':'BAD',")
         assertFailsWith<StructureChanged> { ComciganParser.serviceCodes(duplicate) }
+    }
+
+    @Test fun `checks token headers only inside the selected AJAX requests`() {
+        val outsideRequest = "const otherOptions={headers:{'X-Hour-Token':window.__HourRequestToken || ''}};"
+        fun appendAfterSchool(page: String) =
+            page.replace("function QAjaxTimetable", "$outsideRequest\nfunction QAjaxTimetable")
+
+        assertFailsWith<StructureChanged> {
+            ComciganParser.serviceCodes(appendAfterSchool(TokenFixtures.page(schoolHeader = false)))
+        }
+        val codes = ComciganParser.serviceCodes(appendAfterSchool(TokenFixtures.page()))
+        assertEquals(TokenFixtures.TOKEN, codes.requestToken?.headerValue())
     }
 
     @Test fun `filters encrypted footer before computing the code column`() {

@@ -66,7 +66,7 @@ class EncodedTextFields private constructor(
 
     companion object {
         private val decoder = Regex(
-            """function\s+QnmsbChange\s*\(\s*(?<value>[\p{L}\p{N}_$]+)\s*\)\s*\{\s*if\s*\(\s*\k<value>\s*==\s*undefined\s*\|\|\s*\k<value>\s*===\s*(?:''|"")\s*\)\s*return\s*(?:''|"")\s*;\s*""" +
+            """\bfunction\s+(?<name>$SCRIPT_IDENTIFIER)\s*\(\s*(?<value>[\p{L}\p{N}_$]+)\s*\)\s*\{\s*if\s*\(\s*\k<value>\s*==\s*undefined\s*\|\|\s*\k<value>\s*===\s*(?:''|"")\s*\)\s*return\s*(?:''|"")\s*;\s*""" +
             """var\s+(?<key>[\p{L}\p{N}_$]+)\s*=\s*String\.fromCharCode\(\s*(?<numbers>[0-9]{1,3}(?:\s*,\s*[0-9]{1,3}){0,255})\s*\)\s*;\s*""" +
             """var\s+(?<raw>[\p{L}\p{N}_$]+)\s*=\s*atob\(\s*\k<value>\s*\)\s*;\s*""" +
             """var\s+(?<bytes>[\p{L}\p{N}_$]+)\s*=\s*new\s+Uint8Array\(\s*\k<raw>\.length\s*\)\s*;\s*""" +
@@ -81,17 +81,19 @@ class EncodedTextFields private constructor(
          * 입력: 중첩 문자열 난독화를 복원한 서비스 페이지.
          * 출력: 기존 페이지는 null, 새 페이지는 복원 정보이며 모호한 표현은 거부한다.
          */
-        internal fun parse(source: String): EncodedTextFields? {
-            if (!Regex("""\bQnmsbChange\s*\(""").containsMatchIn(source)) return null
+        internal fun parse(source: String, required: Boolean): EncodedTextFields? {
+            val matches = decoder.findAll(source).take(2).toList()
+            val legacyDecoderMentioned = Regex("""\bQnmsbChange\s*\(""").containsMatchIn(source)
+            if (matches.isEmpty() && !required && !legacyDecoderMentioned) return null
             try {
-                val matches = decoder.findAll(source).toList()
-                require(matches.size == 1)
-                require(Regex("""function\s+QnmsbChange\s*\(""").findAll(source).count() == 1)
-                val values = matches.single().groups["numbers"]!!.value.split(',').map { it.trim().toInt() }
+                val match = matches.single()
+                val name = Regex.escape(match.groups["name"]!!.value)
+                require(Regex("""\bfunction\s+$name\s*\(""").findAll(source).count() == 1)
+                val values = match.groups["numbers"]!!.value.split(',').map { it.trim().toInt() }
                 require(values.size in 1..256 && values.all { it in 0..255 })
-                val starts = Regex("""new\s+Date\(\s*QnmsbChange\(\s*자료\.(자료\d+)\s*\)\s*\)""")
+                val starts = Regex("""new\s+Date\(\s*$name\s*\(\s*자료\.($SERVICE_FIELD)\s*\)\s*\)""")
                     .findAll(source).map { it.groupValues[1] }.toSet()
-                val times = Regex("""자료\.(자료\d+)\[\s*교시\s*-\s*1\s*\]""")
+                val times = Regex("""자료\.($SERVICE_FIELD)\s*\[\s*교시\s*-\s*1\s*\]""")
                     .findAll(source).map { it.groupValues[1] }.toSet()
                 require(starts.size == 1 && times.size == 1)
                 return EncodedTextFields(values.map { it.toByte() }.toByteArray(), starts.single(), times.single())
