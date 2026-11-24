@@ -14,13 +14,13 @@
 Kotlin과 Jetpack Compose Material 3로 제작한 컴시간알리미 비공식 오픈소스 Android 클라이언트입니다.
 
 <!-- release:start -->
-현재 배포 버전: **1.1.3 — 컴시간의 게시 기간 전환 후 이번 주와 다음 주 시간표가 조회되지 않는 문제 해결** Android 8.0(API 26) 이상에서 설치할 수 있습니다.
+현재 배포 버전: **1.1.4 — 컴시간 학교 검색 목록 구조 변경으로 학교 검색과 이번 주·다음 주 시간표 조회가 실패하는 문제 해결** Android 8.0(API 26) 이상에서 설치할 수 있습니다.
 
-[![APK 다운로드 · 1.1.3](https://img.shields.io/badge/APK_다운로드-1.1.3-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/download/v1.1.3/comcigan-neo-1.1.3.apk)
-[![릴리즈 노트 · 1.1.3](https://img.shields.io/badge/릴리즈_노트-1.1.3-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/tag/v1.1.3)
+[![APK 다운로드 · 1.1.4](https://img.shields.io/badge/APK_다운로드-1.1.4-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/download/v1.1.4/comcigan-neo-1.1.4.apk)
+[![릴리즈 노트 · 1.1.4](https://img.shields.io/badge/릴리즈_노트-1.1.4-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/mchany/comcigan-neo/releases/tag/v1.1.4)
 
 기존 배포 인증서와 동일한 인증서로 서명한 APK입니다.
-APK의 SHA-256은 릴리즈에 첨부된 [SHA256SUMS.txt](https://github.com/mchany/comcigan-neo/releases/download/v1.1.3/SHA256SUMS.txt)에서 확인할 수 있습니다.
+APK의 SHA-256은 릴리즈에 첨부된 [SHA256SUMS.txt](https://github.com/mchany/comcigan-neo/releases/download/v1.1.4/SHA256SUMS.txt)에서 확인할 수 있습니다.
 <!-- release:end -->
 
 ## 구현한 기능
