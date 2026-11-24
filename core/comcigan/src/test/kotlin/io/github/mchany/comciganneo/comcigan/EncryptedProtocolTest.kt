@@ -39,6 +39,77 @@ class EncryptedProtocolTest {
         assertFailsWith<StructureChanged> { ComciganParser.serviceCodes(page(0)) }
     }
 
+    private val nestedSchoolIndex = "var r = Math.floor(H학교명단 . 학교검색 [ i ] [ 0 ] / 6347) + 2;"
+
+    private fun schoolListRenderer(rows: String) = """
+        function renderSchools($rows) {
+            if ($rows.length) {
+                var header = "}";
+                var r = Math.floor($rows[i][0]/6347)+2;
+                return $rows[i][r];
+            }
+        }
+        renderSchools(H학교명단.학교검색);
+    """.trimIndent()
+
+    private fun pageWithSchoolIndex(script: String) =
+        page().replace("var r=Math.floor(학교명단[i][0]/6347)+2;", script)
+
+    @Test fun `extracts the code column from a nested school list or a search result parameter`() {
+        for (script in listOf(nestedSchoolIndex, schoolListRenderer("data"), schoolListRenderer("검색결과"))) {
+            val serviceCodes = ComciganParser.serviceCodes(pageWithSchoolIndex(script))
+            assertEquals(6347, serviceCodes.schoolCodeDivisor)
+            assertEquals(2, serviceCodes.schoolCodeOffset)
+            assertEquals(listOf(29318, 20449), ComciganParser.schools(schools, serviceCodes).map { it.code })
+        }
+    }
+
+    @Test fun `accepts equivalent school equations and ignores unrelated calculations`() {
+        val unrelated = """
+            function renderOther(data) {
+                var r = Math.floor(data[i][0]/5000)+4;
+                return data[i][r];
+            }
+            renderOther(other.rows);
+        """.trimIndent()
+        val source = pageWithSchoolIndex("$unrelated\n$nestedSchoolIndex\n${schoolListRenderer("data")}")
+        val serviceCodes = ComciganParser.serviceCodes(source)
+        assertEquals(6347, serviceCodes.schoolCodeDivisor)
+        assertEquals(2, serviceCodes.schoolCodeOffset)
+        assertFailsWith<StructureChanged> { ComciganParser.serviceCodes(pageWithSchoolIndex(unrelated)) }
+    }
+
+    @Test fun `rejects conflicting or invalid school code equations`() {
+        val conflictingIndex = nestedSchoolIndex.replace("6347", "5000")
+        assertFailsWith<StructureChanged> { ComciganParser.serviceCodes(page() + "\n" + conflictingIndex) }
+        for (invalid in listOf(
+            nestedSchoolIndex.replace("6347", "0"),
+            nestedSchoolIndex.replace("6347", "2147483648"),
+            nestedSchoolIndex.replace("+ 2", "+ 65"),
+        )) {
+            assertFailsWith<StructureChanged> { ComciganParser.serviceCodes(pageWithSchoolIndex(invalid)) }
+        }
+    }
+
+    @Test fun `limits parameter formulas to the renderer body`() {
+        val outsideRenderer = "var r = Math.floor(data[i][0]/5000)+4;"
+        val renderer = schoolListRenderer("data")
+        val serviceCodes = ComciganParser.serviceCodes(pageWithSchoolIndex("$renderer\n$outsideRenderer"))
+        assertEquals(6347, serviceCodes.schoolCodeDivisor)
+        assertEquals(2, serviceCodes.schoolCodeOffset)
+        val emptyRenderer = "function renderSchools(data) {}\nrenderSchools(H학교명단.학교검색);"
+        assertFailsWith<StructureChanged> {
+            ComciganParser.serviceCodes(pageWithSchoolIndex("$emptyRenderer\n$outsideRenderer"))
+        }
+    }
+
+    @Test fun `does not read an offset from the first line of a continued expression`() {
+        val continued = nestedSchoolIndex.replace("+ 2;", "+ 2\n + 1;")
+        assertFailsWith<StructureChanged> { ComciganParser.serviceCodes(pageWithSchoolIndex(continued)) }
+        val withAutomaticSemicolon = nestedSchoolIndex.removeSuffix(";")
+        assertEquals(2, ComciganParser.serviceCodes(pageWithSchoolIndex(withAutomaticSemicolon)).schoolCodeOffset)
+    }
+
     @Test fun `authenticates decrypts and selects different code columns instead of decoys`() {
         for (body in listOf(schools, legacyEncoding)) {
             val result = ComciganParser.schools(body + "\u0000\r\n", codes)
