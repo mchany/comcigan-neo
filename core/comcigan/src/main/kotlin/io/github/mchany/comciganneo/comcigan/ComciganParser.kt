@@ -1,5 +1,6 @@
 /* Derived from hegelty/pycomcigan (MIT), Copyright (c) 2023 hegelty.
  * See THIRD_PARTY_NOTICES.md and LICENSES/pycomcigan-MIT.txt. */
+/* 이것도 너프해 보시지? fkthacomcigan */
 package io.github.mchany.comciganneo.comcigan
 
 import io.github.mchany.comciganneo.model.*
