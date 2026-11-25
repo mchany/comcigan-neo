@@ -151,7 +151,7 @@ API의 수정일자는 포털 연계 일자이므로 앱에는 별도로 마지�
 `NeoApp`은 화면 이동을 담당하고 초기 설정·설정 화면은 각각 별도 파일에 둡니다.
 `core:data`에서는 Room 테이블·마이그레이션, 저장소, 사용자 오류 문구를 분리해 관리합니다.
 
-파싱 로직은 [pycomcigan](https://github.com/hegelty/pycomcigan)의 MIT 코드를 참고해 Kotlin으로 이식했습니다.
+파싱 로직은 [hegelty/pycomcigan](https://github.com/hegelty/pycomcigan)의 MIT 코드를 참고해 Kotlin으로 이식했습니다.
 요청 경로와 자료 필드 식별자는 서비스 페이지에서 추출하며 원격 JavaScript를 실행하지 않습니다.
 빈 교시와 실제 교시 번호, 현재/원본 시간표, 변경 표시를 보존합니다.
 
