@@ -15,13 +15,20 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class RequestTokenTransportTest {
-    private data class Seen(val path: String,val token: String?,val query: String? = null)
+    private data class Seen(
+        val path: String, val token: String?, val query: String? = null, val method: String = "GET",
+        val contentType: String? = null, val body: String = "",
+    )
     private data class Reply(val status: Int,val body: String)
     private class Server(date: LocalDate? = null, private val respond: (Seen,Int) -> Reply) : Closeable {
         val seen = Collections.synchronizedList(mutableListOf<Seen>())
         private val server = HttpServer.create(InetSocketAddress("127.0.0.1",0),0).apply {
             createContext("/") { exchange ->
-                val request = Seen(exchange.requestURI.path,exchange.requestHeaders.getFirst("X-Hour-Token"),exchange.requestURI.rawQuery)
+                val request = Seen(
+                    exchange.requestURI.path, exchange.requestHeaders.getFirst("X-Hour-Token"), exchange.requestURI.rawQuery,
+                    exchange.requestMethod, exchange.requestHeaders.getFirst("Content-Type"),
+                    exchange.requestBody.use { it.readBytes().decodeToString() },
+                )
                 seen.add(request)
                 val reply = respond(request,seen.size)
                 val bytes = reply.body.toByteArray(if (request.path == "/st") charset("MS949") else Charsets.UTF_8)
@@ -105,6 +112,118 @@ class RequestTokenTransportTest {
             assertTrue(server.seen.all { it.token==null })
         }
     }
+
+    @Test fun `numeric POST preserves exact bodies and reads published selector seven`() = runBlocking {
+        val date = LocalDate.parse("2026-11-09")
+        val search = "MzIxbCVFRCU5NSU5OSVFQSVCNSU5MCFfMjYwMA%3D%3D"
+        val first = "OTg3NjVfMTIzNF8wXzFfMjYwMA=="
+        val second = "OTg3NjVfMTIzNF8wXzdfMjYwMA=="
+        Server(date) { request, _ ->
+            val json = when (request.body) {
+                search -> """{"학교검색":[[12694,"ipPGmw==","ipPGmw==",0,"eldKBQ==",0]]}"""
+                first -> numericTimetable("eVVLB2ZUSBx7XA==")
+                second -> numericTimetable("eVVLB2ZUSBx6Uw==")
+                else -> null
+            }
+            when {
+                request.path == "/st" -> Reply(200, postPage())
+                json != null -> Reply(200, TokenFixtures.encrypt(json, "2600"))
+                else -> Reply(400, "Unexpected body")
+            }
+        }.use { server ->
+            val school = server.client.searchSchools("학교!").single()
+            assertEquals(School(1234, "지역", "지역"), school)
+            val snapshot = server.client.fetch(ClassSelection(school, 1, 1), 1)
+            assertEquals("2026-11-16", snapshot.weekStart)
+            assertEquals("수학", snapshot.slots.single().current?.subject)
+            assertEquals(
+                listOf(
+                    Seen("/st", null),
+                    Seen("/765432", TokenFixtures.TOKEN, method = "POST", contentType = "text/plain; charset=UTF-8", body = search),
+                    Seen("/765432", TokenFixtures.TOKEN, method = "POST", contentType = "text/plain; charset=UTF-8", body = first),
+                    Seen("/765432", TokenFixtures.TOKEN, method = "POST", contentType = "text/plain; charset=UTF-8", body = second),
+                ),
+                server.seen,
+            )
+        }
+    }
+
+    @Test fun `ambiguous or unsupported POST declarations fail closed`() {
+        val page = postPage()
+        for (invalid in listOf(
+            page.replace("Qa='POST'", "Qa='GET'"),
+            page.replace("Qa='POST'", "Qa='POST' + other"),
+            page + "\nQa='GET';",
+            page.replace("var 안내중 = false,Qa='POST';", "function unrelated(){var Qa='POST';}"),
+            page.replace("findSchool7(sc, success)", "findSchool7(sc, Qa)"),
+            page.replace("Qa='POST'", "Other='POST'") + "\n// Qa='POST';",
+            page.replace("Qa='POST'", "Other='POST'") + "\nvar text=\"Qa='POST';\";",
+            page.replaceFirst("method:Qa", "method:Other"),
+            page.replaceFirst("method:Qa,", "method:Qa,method:'GET',"),
+            page.replace("r+'_2600'", "r+'_2601'"),
+            page.replaceFirst("url:'./765432'", "url:'./123456'"),
+            page.replace("charset=UTF-8", "charset=MS949"),
+            page.replace("btoa(s8+'_'+r+'_2600')", "encodeURIComponent(btoa(s8+'_'+r+'_2600'))"),
+            page.replaceFirst("dataType:", "data:btoa('other'),dataType:"),
+            page.replaceFirst("headers:{'X-Hour-Token'", "headers:{'Different-Header'"),
+            page.replace("url:'./765432',method:Qa,contentType:'text/plain; charset=UTF-8'," +
+                "data:btoa(s8+'_'+r+'_2600')",
+                "url:'./765432?'+btoa(s8+'_'+r+'_2600')"),
+        )) {
+            val error = assertFailsWith<StructureChanged> { ComciganParser.serviceCodes(invalid) }
+            assertEquals(StructureSource.PROTOCOL, error.source)
+        }
+    }
+
+    @Test fun `unrelated numeric AJAX does not affect lookup recognition`() {
+        val unrelated = "\nfunction ping(){return ${'$'}.ajax({url:'./123',data:{kind:'status'}});}"
+        for ((page, method) in listOf(
+            TokenFixtures.page() to ComciganRequestMethod.GET,
+            postPage() to ComciganRequestMethod.POST,
+        )) {
+            val codes = ComciganParser.serviceCodes(page + unrelated)
+            assertEquals("/765432", codes.endpoint)
+            assertEquals(method, codes.requestMethod)
+        }
+    }
+
+    private fun postPage() = TokenFixtures.page()
+        .replace("function QAjaxSchool(sc, success) {return", "function findSchool7(sc, success) {" +
+            "var s7='321l'+encodeURIComponent(sc);return")
+        .replace("url:'./765432?'+encodeURIComponent(btoa('321l'+encodeURIComponent(sc)+'_enc5'))",
+            "url:'./765432',method:Qa,contentType:'text/plain; charset=UTF-8',data:encodeURIComponent(btoa(s7+'_2600'))")
+        .replace("url:'./765432?'+btoa(s7+'_'+da1+'_'+r+'_enc5')",
+            "url:'./765432',method:Qa,contentType:'text/plain; charset=UTF-8',data:btoa(s8+'_'+r+'_2600')")
+        .replace("var s7=sc+sc2;return", "var s7=sc+sc2,s8=s7+'_'+da1;return")
+        .replace("QAjaxTimetable", "requestTable8")
+        .replace("sc_data", "loadTable1")
+        .replace("da1=H시간표.자료13;", "da1=decodeText9(H시간표.자료13);") + """
+
+        var 안내중 = false,Qa='POST';
+        function loadTable1(sc,sc2,r,nw) {
+            var da1='0';
+            requestTable8(sc,sc2,da1,r,function(data) {});
+        }
+        function decodeText9(value) {
+            if(value==undefined || value==='') return '';
+            var key=String.fromCharCode(75,101,121,49);
+            var raw=atob(value);
+            var bytes=new Uint8Array(raw.length);
+            for(var i=0;i<bytes.length;i++) {
+                bytes[i]=raw.charCodeAt(i)^key.charCodeAt(i%key.length);
+            }
+            return new TextDecoder('euc-kr',{fatal:true}).decode(bytes);
+        }
+        var start = new Date(decodeText9(자료.자료901));
+        var time = 자료.자료902[교시-1];
+    """.trimIndent()
+
+    private fun numericTimetable(start: String) = """{
+        "자료901":"$start","자료902":["09:00"],"자료13":"eVVLB2ZUSBx6VFkAeV9KBXFQTw==",
+        "학급수":[1,1],"분리":1000,"일자자료":$published,"오늘r":1,
+        "자료11":["","+tbC1mE="],"자료12":[0,"95O+4Q=="],
+        "자료14":[[],[[],[1,[1,1001]]]],"자료15":[[],[[],[1,[1,1001]]]]
+    }"""
 
     private val selection = ClassSelection(School(29318,"테스트고","대전"),1,1)
     private val published = """[[7,"26-11-16 ~ 26-11-21"],[1,"26-11-09 ~ 26-11-14"]]"""

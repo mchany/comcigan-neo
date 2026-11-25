@@ -36,8 +36,13 @@ class HourRequestToken private constructor(private val value: String) {
     }
 }
 
+enum class ComciganRequestMethod { GET, POST }
+
+internal data class ComciganRequest(val path: String, val body: String? = null)
+
 data class ServiceCodes(
-    val searchRoute: String,
+    val endpoint: String,
+    val schoolSearchPrefix: String,
     val requestPrefix: String,
     val teacherField: String,
     val subjectField: String,
@@ -51,20 +56,24 @@ data class ServiceCodes(
     val encodedSchoolSearch: Boolean = false,
     val requestToken: HourRequestToken? = null,
     val textFields: EncodedTextFields? = null,
+    val requestMethod: ComciganRequestMethod = ComciganRequestMethod.GET,
 ) {
-    val timetableRoute: String get() = searchRoute.substringBefore('?') + "?"
+    val timetableRoute: String get() = "$endpoint?"
+    val searchRoute: String get() = timetableRoute + schoolSearchPrefix
     /**
      * 역할: 학교 검색 API 경로를 구성한다.
      * 입력: query: String.
      * 출력: String 값.
      */
-    fun searchPath(query: String): String {
+    fun searchPath(query: String): String = searchRequest(query).path
+
+    internal fun searchRequest(query: String): ComciganRequest {
         if (encodedSchoolSearch) {
-            val token = searchRoute.substringAfter('?') + uriComponent(query) + "_$responseFormat"
-            return timetableRoute + uriComponent(Base64.getEncoder().encodeToString(token.toByteArray(Charsets.UTF_8)))
+            val token = schoolSearchPrefix + uriComponent(query) + "_$responseFormat"
+            return lookupRequest(uriComponent(base64(token)))
         }
-        return searchRoute + URLEncoder.encode(query, "MS949") +
-            if (responseKeyHex != null) "_$responseFormat" else ""
+        return lookupRequest(schoolSearchPrefix + URLEncoder.encode(query, "MS949") +
+            if (responseKeyHex != null) "_$responseFormat" else "")
     }
     /**
      * 역할: 시간표 API 경로를 구성한다.
@@ -75,12 +84,21 @@ data class ServiceCodes(
         require(week in 0..1)
         return timetableRequestPath(schoolCode, week + 1)
     }
-    fun timetableRequestPath(schoolCode: Int, request: Int): String {
+    fun timetableRequestPath(schoolCode: Int, request: Int): String = timetableRequest(schoolCode, request).path
+
+    internal fun timetableRequest(schoolCode: Int, request: Int): ComciganRequest {
         require(request > 0)
         val token = "${requestPrefix}_${schoolCode}_0_${request}" +
             if (responseKeyHex != null) "_$responseFormat" else ""
-        return timetableRoute + Base64.getEncoder().encodeToString(token.toByteArray(Charsets.UTF_8))
+        return lookupRequest(base64(token))
     }
+
+    private fun lookupRequest(payload: String): ComciganRequest = when (requestMethod) {
+        ComciganRequestMethod.GET -> ComciganRequest(timetableRoute + payload)
+        ComciganRequestMethod.POST -> ComciganRequest(endpoint, payload)
+    }
+
+    private fun base64(value: String): String = Base64.getEncoder().encodeToString(value.toByteArray(Charsets.UTF_8))
 
     // JavaScript encodeURIComponent uses UTF-8 and %20 for spaces, unlike form encoding.
     private fun uriComponent(value: String): String = buildString {
