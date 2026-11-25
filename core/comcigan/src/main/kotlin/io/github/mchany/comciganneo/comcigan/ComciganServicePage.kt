@@ -25,6 +25,30 @@ internal object ComciganServicePage {
             """\s*\+\s*encodeURIComponent\(\s*sc\s*\)\s*\+\s*$suffix\s*\)\s*\)\s*(?=,|$)""",
     )
     private val timetableRequest = Regex(endpoint + """btoa\([^;{}]*?\+\s*$suffix\s*\)\s*(?=,|$)""")
+    private const val postUrl = """\A\s*url\s*:\s*(?<urlquote>['"])\.(?<endpoint>/[0-9]+)\k<urlquote>"""
+    private val postRoute = Regex(postUrl + """\s*(?=,|$)""")
+    private val postSchoolParameters = Regex("""\s*sc\s*,\s*$SCRIPT_IDENTIFIER\s*""")
+    private val postTimetableParameters = Regex("""\s*sc\s*,\s*sc2\s*,\s*da1\s*,\s*r\s*,\s*$SCRIPT_IDENTIFIER\s*""")
+    private const val postData = postUrl + """\s*,\s*method\s*:\s*(?<method>$SCRIPT_IDENTIFIER)\s*,""" +
+        """\s*contentType\s*:\s*(?<contentQuote>['"])text/plain;\s*charset=UTF-8\k<contentQuote>\s*,\s*data\s*:\s*"""
+    private val postSearch = Regex(
+        postData + """encodeURIComponent\(\s*btoa\(\s*(?<input>$SCRIPT_IDENTIFIER)\s*\+\s*$suffix\s*\)\s*\)\s*(?=,|$)""",
+    )
+    private val postSearchInput = Regex(
+        """\bvar\s+(?<input>$SCRIPT_IDENTIFIER)\s*=\s*(?<prefixQuote>['"])(?<prefix>[0-9]+l)\k<prefixQuote>\s*\+\s*""" +
+            """encodeURIComponent\(\s*sc\s*\)\s*;\s*return\s*\z""",
+    )
+    private val postTimetable = Regex(
+        postData + """btoa\(\s*(?<input>$SCRIPT_IDENTIFIER)\s*\+\s*""" +
+            """(?:(?<dateSep>['"])_\k<dateSep>\s*\+\s*(?<date>da1)\s*\+\s*)?""" +
+            """(?<requestSep>['"])_\k<requestSep>\s*\+\s*r\s*\+\s*$suffix\s*\)\s*(?=,|$)""",
+    )
+    private val postTimetableInput = Regex(
+        """\bvar\s+(?<school>$SCRIPT_IDENTIFIER)\s*=\s*sc\s*\+\s*sc2\s*""" +
+            """(?:,\s*(?<dated>$SCRIPT_IDENTIFIER)\s*=\s*\k<school>\s*\+\s*(?<sep>['"])_\k<sep>\s*\+\s*da1\s*)?;\s*return\s*\z""",
+    )
+    private val postOverride = Regex("""(?:\A|,)\s*(?:['"])?(?:url|method|type|contentType|data)(?:['"])?\s*:""")
+    private val scriptElement = Regex("""<script\b[^>]*>(.*?)</script\s*>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
     private val legacyPrefix = Regex("""\bsc_data\(\s*'([0-9]+)_""")
     private const val identifierPath = """$SCRIPT_IDENTIFIER(?:\s*\.\s*$SCRIPT_IDENTIFIER)*"""
     private val schoolListCall = Regex(
@@ -36,25 +60,89 @@ internal object ComciganServicePage {
         """(?<![\p{L}\p{N}_$.])Math\s*\.\s*floor\s*\(\s*($identifierPath)""" +
             """\s*\[\s*i\s*]\s*\[\s*0\s*]\s*/\s*([0-9]+)\s*\)\s*\+\s*([0-9]+)$formulaEnd""",
     )
-    private val rendererBodyToken = Regex(
+    private const val scriptLiteralOrComment =
         """//[^\r\n]*|/\*[\s\S]*?\*/|"(?:[^"\\\r\n]++|\\[\s\S])*+"|'(?:[^'\\\r\n]++|\\[\s\S])*+'|""" +
-            """`(?:[^`\\]++|\\[\s\S])*+`|[{}]""",
-    )
+            """`(?:[^`\\]++|\\[\s\S])*+`"""
+    private val rendererBodyToken = Regex("$scriptLiteralOrComment|[{}]")
     private const val schoolCodeIndexChanged = "학교 코드 위치 형식이 변경됐어요."
 
-    private data class ScriptFunction(val name: String, val body: String, val firstParameter: String)
+    private data class ScriptFunction(val name: String, val body: String, val parameters: String) {
+        val firstParameter: String get() = parameters.substringBefore(',').trim()
+        fun hasParameter(name: String): Boolean = parameters.split(',').any { it.trim() == name }
+    }
 
-    private data class AjaxRequest(val functionName: String, val options: String, val url: MatchResult) {
-        val endpoint: String get() = url.groups["endpoint"]!!.value
-        val format: String get() = url.groups["format"]!!.value
+    private data class AjaxCall(val function: ScriptFunction, val options: String, val before: String)
+
+    private data class AjaxRequest(
+        val call: AjaxCall, val expression: MatchResult,
+        val method: ComciganRequestMethod = ComciganRequestMethod.GET,
+        val postSearchPrefix: String? = null,
+    ) {
+        val endpoint: String get() = expression.groups["endpoint"]!!.value
+        val format: String get() = expression.groups["format"]!!.value
+    }
+
+    private fun postSearch(call: AjaxCall): AjaxRequest? {
+        if (!postSchoolParameters.matches(call.function.parameters)) return null
+        val request = postSearch.find(call.options) ?: return null
+        val input = postSearchInput.find(call.before) ?: return null
+        if (request.groups["input"]!!.value != input.groups["input"]!!.value || overridesPostOption(call, request)) return null
+        return AjaxRequest(call, request, ComciganRequestMethod.POST, input.groups["prefix"]!!.value)
+    }
+
+    private fun postTimetable(call: AjaxCall): AjaxRequest? {
+        if (!postTimetableParameters.matches(call.function.parameters)) return null
+        val request = postTimetable.find(call.options) ?: return null
+        val input = postTimetableInput.find(call.before) ?: return null
+        val dated = input.groups["dated"]?.value
+        val expected = when {
+            request.groups["date"] == null -> dated
+            dated == null -> input.groups["school"]!!.value
+            else -> null
+        }
+        if (request.groups["input"]!!.value != expected || overridesPostOption(call, request)) return null
+        return AjaxRequest(call, request, ComciganRequestMethod.POST)
+    }
+
+    private fun overridesPostOption(call: AjaxCall, request: MatchResult): Boolean =
+        postOverride.containsMatchIn(call.options.substring(request.range.last + 1))
+
+    private fun matchingPostMethod(source: String, school: AjaxRequest, timetable: AjaxRequest): Boolean {
+        val reference = school.expression.groups["method"]!!.value
+        if (reference != timetable.expression.groups["method"]!!.value ||
+            school.call.function.hasParameter(reference) || timetable.call.function.hasParameter(reference)) return false
+        val name = Regex.escape(reference)
+        val tokens = Regex("""$scriptLiteralOrComment|(?<assignment>(?<![\p{L}\p{N}_$.])$name\s*=(?!=))|[{}]""")
+        // The live page declares the method alongside a boolean in the same var statement.
+        val declaration = Regex(
+            """\b(?:var|let|const)\s+(?:$SCRIPT_IDENTIFIER\s*=\s*(?:true|false)\s*,\s*)*""" +
+                """(?<binding>$name)\s*=\s*(?<quote>['"])POST\k<quote>\s*(?=[;,])""",
+        )
+        val scripts = scriptElement.findAll(source).map { it.groupValues[1] }.toList().ifEmpty { listOf(source) }
+        var bound = false
+        for (script in scripts) {
+            val positions = declaration.findAll(script).map { it.groups["binding"]!!.range.first }.toSet()
+            var depth = 0
+            for (token in tokens.findAll(script)) {
+                when (token.value) {
+                    "{" -> depth++
+                    "}" -> depth--
+                    else -> {
+                        val assignment = token.groups["assignment"] ?: continue
+                        if (bound || depth != 0 || assignment.range.first !in positions) return false
+                        bound = true
+                    }
+                }
+            }
+        }
+        return bound
     }
 
     private fun functions(source: String): List<ScriptFunction> {
         val declarations = functionDeclaration.findAll(source).toList()
         return declarations.mapIndexed { index, declaration ->
             val nextStart = declarations.getOrNull(index + 1)?.range?.first ?: source.length
-            val firstParameter = declaration.groupValues[2].substringBefore(',').trim()
-            ScriptFunction(declaration.groupValues[1], source.substring(declaration.range.last + 1, nextStart), firstParameter)
+            ScriptFunction(declaration.groupValues[1], source.substring(declaration.range.last + 1, nextStart), declaration.groupValues[2])
         }
     }
 
@@ -195,42 +283,56 @@ internal object ComciganServicePage {
             Regex(pattern).find(source)?.groupValues?.get(1)
                 ?: throw StructureChanged("컴시간 페이지의 $name 형식이 변경됐어요.")
         val functions = functions(source)
-        val calls = functions.flatMap { (name, body) ->
-            ajaxOptions.findAll(body).map { name to it.groupValues[1] }.toList()
+        val calls = functions.flatMap { function ->
+            ajaxOptions.findAll(function.body).map {
+                AjaxCall(function, it.groupValues[1], function.body.substring(0, it.range.first))
+            }.toList()
         }
-        fun requests(pattern: Regex) = calls.flatMap { (name, options) ->
-            pattern.findAll(options).map { AjaxRequest(name, options, it) }.toList()
+        fun getRequests(pattern: Regex) = calls.flatMap { call ->
+            pattern.findAll(call.options).map { AjaxRequest(call, it) }.toList()
         }
-        val searchRequests = requests(searchRequest)
-        val timetableRequests = requests(timetableRequest)
-        val encodedSearch = searchRequests.isNotEmpty() || timetableRequests.isNotEmpty() ||
+        val postCalls = calls.filter { call ->
+            postRoute.containsMatchIn(call.options) &&
+                (postSearchInput.containsMatchIn(call.before) || postTimetableInput.containsMatchIn(call.before))
+        }
+        val searchRequests = getRequests(searchRequest) + postCalls.mapNotNull(::postSearch)
+        val timetableRequests = getRequests(timetableRequest) + postCalls.mapNotNull(::postTimetable)
+        val encodedSearch = searchRequests.isNotEmpty() || timetableRequests.isNotEmpty() || postCalls.isNotEmpty() ||
             functions.any { it.name == "QAjaxSchool" || it.name == "QAjaxTimetable" }
         val school = searchRequests.singleOrNull()
         val timetable = timetableRequests.singleOrNull()
-        if (encodedSearch && (school == null || timetable == null || school.functionName == timetable.functionName ||
-                school.endpoint != timetable.endpoint || school.format != timetable.format)) {
+        if (encodedSearch && (school == null || timetable == null || school.call.function.name == timetable.call.function.name ||
+                school.endpoint != timetable.endpoint || school.format != timetable.format || school.method != timetable.method)) {
             throw StructureChanged("컴시간 페이지의 검색 또는 시간표 요청 형식이 변경됐어요.")
+        }
+        val method = school?.method ?: ComciganRequestMethod.GET
+        if (postCalls.isNotEmpty() && (postCalls.size != 2 || method != ComciganRequestMethod.POST ||
+                school == null || timetable == null || !matchingPostMethod(source, school, timetable))) {
+            throw StructureChanged("컴시간 페이지의 조회 메서드 형식이 변경됐어요.")
         }
         val format = school?.format ?: "enc2"
         val numericVersion = format.all { it in '0'..'9' }
-        val searchRoute = school?.let {
-            it.endpoint + "?" + it.url.groups["prefix"]!!.value
-        } ?: capture("검색 경로", """\.(/\d+\?\d+l)""")
-        val token = if (school != null && timetable != null) requestToken(source, school.options, timetable.options) else null
+        val (apiEndpoint, schoolSearchPrefix) = if (school == null) {
+            val route = capture("검색 경로", """\.(/\d+\?\d+l)""")
+            route.substringBefore('?') to route.substringAfter('?')
+        } else {
+            school.endpoint to (school.postSearchPrefix ?: school.expression.groups["prefix"]!!.value)
+        }
+        val token = if (school != null && timetable != null) requestToken(source, school.call.options, timetable.call.options) else null
         val encrypted = source.contains("CryptoJS.AES.decrypt")
         if (encodedSearch && !encrypted) throw StructureChanged("암호화 응답 처리 형식이 변경됐어요.")
         val responseKey = if (encrypted) key(source) else null
         val (divisor, offset) = if (encrypted) schoolCodeIndex(source, functions) else null to 2
         return ServiceCodes(
-            searchRoute,
-            timetablePrefix(source, functions, timetable?.functionName, numericVersion),
+            apiEndpoint, schoolSearchPrefix,
+            timetablePrefix(source, functions, timetable?.call?.function?.name, numericVersion),
             capture("교사", """(?<![\p{L}\p{N}_$])성명\s*=\s*(?:$SCRIPT_IDENTIFIER\s*\(\s*)?자료\.($SERVICE_FIELD)\s*\[\s*th\s*\]"""),
             capture("과목", """자료\.($SERVICE_FIELD)\s*\[\s*sb\s*\]"""),
             capture("갱신 시각", """\bda1\s*=\s*(?:$SCRIPT_IDENTIFIER\s*\(\s*)?H시간표\.($SERVICE_FIELD)(?![\p{L}\p{N}_$])"""),
             capture("현재 시간표", """(?<![\p{L}\p{N}_$])일일자료\s*=\s*Q자료\(\s*자료\.($SERVICE_FIELD)\s*\["""),
             capture("원본 시간표", """(?<![\p{L}\p{N}_$])원자료\s*=\s*Q자료\(\s*자료\.($SERVICE_FIELD)\s*\["""),
             responseKey, divisor, offset, format, encodedSearch, token,
-            EncodedTextFields.parse(source, required = numericVersion),
+            EncodedTextFields.parse(source, required = numericVersion), method,
         )
     }
 }

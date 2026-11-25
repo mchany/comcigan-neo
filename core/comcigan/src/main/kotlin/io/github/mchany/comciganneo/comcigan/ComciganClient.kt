@@ -5,13 +5,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.nio.charset.Charset
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.util.concurrent.TimeUnit
+
+private val COMCIGAN_POST_MEDIA_TYPE = "text/plain; charset=UTF-8".toMediaType()
 
 class ComciganRequestRejected : IOException("자료 조회 요청이 거부됐어요. (403)")
 class ComciganRateLimited : IOException("조회 요청이 너무 많아요. 잠시 후 다시 시도해 주세요. (429)")
@@ -27,14 +31,17 @@ class ComciganClient internal constructor(
     private val lock = Mutex()
     private var cachedCodes: Pair<Long, ServiceCodes>? = null
     /**
-     * 역할: 지정한 경로의 네트워크 응답을 조회한다.
-     * 입력: path: String, charset: Charset, 선택적 요청 토큰 token: HourRequestToken?.
-     * 출력: String 값.
+     * 역할: 서비스 페이지 또는 조회 요청을 보내고 지정한 문자셋으로 응답을 읽는다.
+     * 입력: 요청 경로와 선택적 POST 본문, 응답 문자셋, 선택적 요청 토큰.
+     * 출력: 응답 문자열.
      */
-    private fun get(path: String, charset: Charset, token: HourRequestToken? = null): String {
-        val request = Request.Builder().url("$baseUrl$path")
+    private fun execute(lookup: ComciganRequest, charset: Charset, token: HourRequestToken? = null): String {
+        val request = Request.Builder().url(baseUrl + lookup.path)
             .header("User-Agent", "Mozilla/5.0 ComciganNeo/0.1 (Android)")
-            .apply { token?.let { header("X-Hour-Token", it.headerValue()) } }.build()
+            .apply {
+                token?.let { header("X-Hour-Token", it.headerValue()) }
+                lookup.body?.let { post(it.toRequestBody(COMCIGAN_POST_MEDIA_TYPE)) }
+            }.build()
         return http.newCall(request).execute().use { response ->
             if (response.code == 403) throw ComciganRequestRejected()
             if (response.code == 429) throw ComciganRateLimited()
@@ -51,7 +58,7 @@ class ComciganClient internal constructor(
      */
     private suspend fun codes(): ServiceCodes = lock.withLock {
         cachedCodes?.takeIf { System.currentTimeMillis() - it.first < 3_600_000 }?.second
-            ?: ComciganParser.serviceCodes(get("/st", Charset.forName("MS949"))).also {
+            ?: ComciganParser.serviceCodes(execute(ComciganRequest("/st"), Charset.forName("MS949"))).also {
                 cachedCodes = System.currentTimeMillis() to it
             }
     }
@@ -75,7 +82,9 @@ class ComciganClient internal constructor(
      */
     suspend fun searchSchools(query: String): List<School> = withContext(Dispatchers.IO) {
         require(query.trim().length >= 2) { "학교 이름을 두 글자 이상 입력해 주세요." }
-        withCodes { codes -> ComciganParser.schools(get(codes.searchPath(query.trim()), Charsets.UTF_8, codes.requestToken), codes) }
+        withCodes { codes ->
+            ComciganParser.schools(execute(codes.searchRequest(query.trim()), Charsets.UTF_8, codes.requestToken), codes)
+        }
     }
     /**
      * 역할: 제한 시간 안에 외부 자료를 조회한다.
@@ -87,7 +96,7 @@ class ComciganClient internal constructor(
         withCodes { codes ->
             val date = today()
             fun read(request: Int) = ComciganParser.timetable(
-                get(codes.timetableRequestPath(selection.school.code, request), Charsets.UTF_8, codes.requestToken),
+                execute(codes.timetableRequest(selection.school.code, request), Charsets.UTF_8, codes.requestToken),
                 codes, selection, System.currentTimeMillis())
             // Request 1 is the official school's initial load. Discover its date/selector catalog afresh.
             val initial = read(1)

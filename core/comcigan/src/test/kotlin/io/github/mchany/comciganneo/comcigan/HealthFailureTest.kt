@@ -4,7 +4,7 @@ import io.github.mchany.comciganneo.model.*
 import kotlin.test.*
 
 class HealthFailureTest {
-    private val codes = ServiceCodes("/123?search", "token", "teachers", "subjects", "updated", "current", "original")
+    private val codes = ServiceCodes("/123", "search", "token", "teachers", "subjects", "updated", "current", "original")
     private val selection = ClassSelection(School(1, "school", "region"), 1, 1)
 
     @Test fun responseFailuresHaveParseSourceWhilePageFailuresKeepProtocolSource() {
