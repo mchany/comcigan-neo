@@ -11,6 +11,9 @@
 
 </div>
 
+> [!WARNING]
+> 현재 컴시간 측의 반복적인 페이지 구조 변경으로 인해 서비스 상태가 불안정하며, 업데이트가 잦을 수 있습니다.
+
 Kotlin과 Jetpack Compose Material 3로 제작한 컴시간알리미 비공식 오픈소스 Android 클라이언트입니다.
 
 <!-- release:start -->
