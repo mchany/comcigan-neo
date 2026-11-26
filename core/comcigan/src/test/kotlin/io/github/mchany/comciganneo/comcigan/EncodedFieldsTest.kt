@@ -75,6 +75,90 @@ class EncodedFieldsTest {
         assertEquals("09:00", slot.startTime)
     }
 
+    private val renamedTimestamp = "da1=decodeText9(schedule7.Updated9) || '0';"
+    private val renamedRenderer = """
+        function render7(자료,학년,반) {
+            var old7, current7;
+            for (var 요일=1;요일<6;요일++) {
+                if (visible) {
+                    old7=cell9(자료.Original5[학년][반][요일][교시]);
+                    current7=cell9(자료.Current4[학년][반][요일][교시]);
+                    var room=자료.Room8[학년][반][요일][교시];
+                    var result=baSplit(current7,old7,자료.변경알림);
+                }
+            }
+        }
+    """.trimIndent()
+
+    private fun renamedRolePage() = numericPage()
+        .replace("da1=decodeText9(H시간표.Updated9);", "")
+        .replace("일일자료=Q자료(자료.Current4[g][c][d][p]); 원자료=Q자료(자료.Original5[g][c][d][p]);", "")
+        .replace("var da1='0';", "var da1='0'; if (useCache) { $renamedTimestamp }")
+        .plus("\n$renamedRenderer")
+
+    @Test fun `extracts renamed timetable fields by role and preserves current and original lessons`() {
+        val codes = ComciganParser.serviceCodes(renamedRolePage())
+        assertEquals("Updated9", codes.updatedField)
+        assertEquals("Current4", codes.currentField)
+        assertEquals("Original5", codes.originalField)
+        val data = renameFields(timetableData)
+            .replace("\"95O+4Q==\"", "\"95O+4Q==\",\"+tzH3w==\"")
+            .replace("\"Original5\":[[],[[],[1,[1,1001]]]]", "\"Original5\":[[],[[],[1,[1,2001]]]]")
+        val selection = ClassSelection(School(123, "지역", "지역"), 1, 1)
+        val snapshot = ComciganParser.timetable(TokenFixtures.encrypt(data, "4317"), codes, selection, 1)
+        assertEquals("2026-11-11 12:34:56", snapshot.serverUpdatedAt)
+        val slot = snapshot.slots.single()
+        assertEquals("수학", slot.current?.subject)
+        assertEquals("국어", slot.original?.subject)
+        assertTrue(slot.changed)
+    }
+
+    @Test fun `ignores comments strings and unrelated timetable field references`() {
+        val page = renamedRolePage()
+        val decoys = """
+            // da1=decodeText9(fake9.Wrong1) || '0';
+            var quoted="da1=decodeText9(fake9.Wrong2) || '0';";
+        """.trimIndent()
+        val withDecoys = page
+            .replace("var da1='0';", "var da1='0';\n$decoys\n")
+            .replace("var old7, current7;", """
+                var old7, current7;
+                /* current7=cell9(자료.Wrong4[학년][반][요일][교시]); */
+                var quoted="old7=cell9(자료.Wrong5[학년][반][요일][교시]);";
+            """.trimIndent())
+            .plus("\nfunction unrelated() { da1=decodeText9(fake9.Wrong3) || '0'; }")
+            .plus("\n/* ${renamedRenderer.replace("Original5", "Wrong6")} */")
+            .plus("\nvar example = `${renamedRenderer.replace("Original5", "Wrong7")}`;")
+        val codes = ComciganParser.serviceCodes(withDecoys)
+        assertEquals("Updated9", codes.updatedField)
+        assertEquals("Current4", codes.currentField)
+        assertEquals("Original5", codes.originalField)
+    }
+
+    @Test fun `rejects missing or conflicting renamed field mappings`() {
+        val page = renamedRolePage()
+        for (invalid in listOf(
+            page.replace(renamedTimestamp, "// $renamedTimestamp\n"),
+            page.replace(renamedTimestamp, "var text=\"$renamedTimestamp\";"),
+            page.replace(renamedTimestamp, "da1=decodeText9(schedule7.Updated9) || other();"),
+            page.replace(renamedTimestamp, "$renamedTimestamp da1=decodeText9(schedule7.Other9) || '0';"),
+            page.replace(renamedTimestamp, "$renamedTimestamp da1=decodeText9(schedule7.Other9) || other();"),
+            page.replace(renamedTimestamp, "$renamedTimestamp da1='0';"),
+            page.replace("baSplit(current7,old7,", "baSplit(current7,current7,"),
+            page.replace("old7=cell9(자료.Original5", "// old7=cell9(자료.Original5"),
+            page.replace("Original5[학년]", "Original5[반]"),
+            page.replace("Original5[학년]", "Current4[학년]"),
+            page.replace("var room=", "current7=cell9(자료.Other4[학년][반][요일][교시]); var room="),
+            page + "\n" + renamedRenderer.replace("render7", "render8").replace("Original5", "Other5"),
+            page.replace(renamedRenderer, "/* $renamedRenderer */"),
+            page + "\n일일자료=Q자료(자료.Other4[g][c][d][p]); 원자료=Q자료(자료.Original5[g][c][d][p]);",
+        )) {
+            assertEquals(StructureSource.PROTOCOL, assertFailsWith<StructureChanged> {
+                ComciganParser.serviceCodes(invalid)
+            }.source)
+        }
+    }
+
     @Test fun `rejects ambiguous or mismatched numeric request grammar`() {
         val source = numericPage()
         for (invalid in listOf(

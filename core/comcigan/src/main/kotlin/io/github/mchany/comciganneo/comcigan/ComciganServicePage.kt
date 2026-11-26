@@ -63,8 +63,30 @@ internal object ComciganServicePage {
     private const val scriptLiteralOrComment =
         """//[^\r\n]*|/\*[\s\S]*?\*/|"(?:[^"\\\r\n]++|\\[\s\S])*+"|'(?:[^'\\\r\n]++|\\[\s\S])*+'|""" +
             """`(?:[^`\\]++|\\[\s\S])*+`"""
+    private val ignoredScriptText = Regex(scriptLiteralOrComment)
     private val rendererBodyToken = Regex("$scriptLiteralOrComment|[{}]")
     private const val schoolCodeIndexChanged = "학교 코드 위치 형식이 변경됐어요."
+    private const val updatedFieldChanged = "컴시간 페이지의 갱신 시각 형식이 변경됐어요."
+    private const val timetableFieldsChanged = "컴시간 페이지의 현재 또는 원본 시간표 형식이 변경됐어요."
+    private const val unqualified = """(?<![\p{L}\p{N}_$.])"""
+    private val legacyUpdatedField = Regex(
+        """\bda1\s*=\s*(?:$SCRIPT_IDENTIFIER\s*\(\s*)?H시간표\.($SERVICE_FIELD)(?![\p{L}\p{N}_$])""",
+    )
+    private val cachedUpdatedField = Regex(
+        """${unqualified}da1\s*=\s*$SCRIPT_IDENTIFIER\s*\(\s*$SCRIPT_IDENTIFIER\s*\.\s*($SERVICE_FIELD)\s*\)""" +
+            """\s*\|\|\s*(['"])0\2\s*(?=[;}]|\z)""",
+    )
+    private val defaultTimestamp = Regex("""\s*(['"])0\1\s*(?=[;,}]|\z)""")
+    private val legacyCurrentField = Regex("""${unqualified}일일자료\s*=\s*Q자료\(\s*자료\.($SERVICE_FIELD)\s*\[""")
+    private val legacyOriginalField = Regex("""${unqualified}원자료\s*=\s*Q자료\(\s*자료\.($SERVICE_FIELD)\s*\[""")
+    private val slotRoles = Regex(
+        """${unqualified}baSplit\s*\(\s*($SCRIPT_IDENTIFIER)\s*,\s*($SCRIPT_IDENTIFIER)\s*,\s*자료\s*\.\s*변경알림\s*\)""",
+    )
+    private val localAssignment = Regex("""$unqualified($SCRIPT_IDENTIFIER)\s*=(?!=)""")
+    private val slotRead = Regex(
+        """\s*($SCRIPT_IDENTIFIER)\s*\(\s*자료\s*\.\s*($SERVICE_FIELD)\s*""" +
+            """\[\s*학년\s*]\s*\[\s*반\s*]\s*\[\s*요일\s*]\s*\[\s*교시\s*]\s*\)\s*(?=[;,}]|\z)""",
+    )
 
     private data class ScriptFunction(val name: String, val body: String, val parameters: String) {
         val firstParameter: String get() = parameters.substringBefore(',').trim()
@@ -118,9 +140,8 @@ internal object ComciganServicePage {
             """\b(?:var|let|const)\s+(?:$SCRIPT_IDENTIFIER\s*=\s*(?:true|false)\s*,\s*)*""" +
                 """(?<binding>$name)\s*=\s*(?<quote>['"])POST\k<quote>\s*(?=[;,])""",
         )
-        val scripts = scriptElement.findAll(source).map { it.groupValues[1] }.toList().ifEmpty { listOf(source) }
         var bound = false
-        for (script in scripts) {
+        for (script in scripts(source)) {
             val positions = declaration.findAll(script).map { it.groups["binding"]!!.range.first }.toSet()
             var depth = 0
             for (token in tokens.findAll(script)) {
@@ -138,11 +159,14 @@ internal object ComciganServicePage {
         return bound
     }
 
-    private fun functions(source: String): List<ScriptFunction> {
-        val declarations = functionDeclaration.findAll(source).toList()
-        return declarations.mapIndexed { index, declaration ->
-            val nextStart = declarations.getOrNull(index + 1)?.range?.first ?: source.length
-            ScriptFunction(declaration.groupValues[1], source.substring(declaration.range.last + 1, nextStart), declaration.groupValues[2])
+    private fun scripts(source: String): List<String> =
+        scriptElement.findAll(source).map { it.groupValues[1] }.toList().ifEmpty { listOf(source) }
+
+    private fun functions(scripts: List<String>): List<ScriptFunction> = scripts.flatMap { script ->
+        val declarations = codeMatches(functionDeclaration, script).toList()
+        declarations.mapIndexed { index, declaration ->
+            val nextStart = declarations.getOrNull(index + 1)?.range?.first ?: script.length
+            ScriptFunction(declaration.groupValues[1], script.substring(declaration.range.last + 1, nextStart), declaration.groupValues[2])
         }
     }
 
@@ -155,6 +179,80 @@ internal object ComciganServicePage {
             }
         }
         return null
+    }
+
+    private fun codeMatches(pattern: Regex, source: String): Sequence<MatchResult> = sequence {
+        val ignored = ignoredScriptText.findAll(source).iterator()
+        var next = if (ignored.hasNext()) ignored.next().range else null
+        for (match in pattern.findAll(source)) {
+            val start = match.range.first
+            while (next != null && next.last < start) next = if (ignored.hasNext()) ignored.next().range else null
+            if (next == null || start !in next) yield(match)
+        }
+    }
+
+    private fun fieldCandidates(pattern: Regex, scripts: List<String>): Sequence<String> =
+        scripts.asSequence().flatMap { codeMatches(pattern, it) }.map { it.groupValues[1] }
+
+    private fun timetableCall(requestName: String): Regex =
+        Regex("""$unqualified${Regex.escape(requestName)}\s*\(\s*sc\s*,\s*sc2\s*,\s*da1\s*,\s*r\s*,""")
+
+    private fun cachedTimestampFields(beforeRequest: String): Sequence<String> {
+        val fields = codeMatches(cachedUpdatedField, beforeRequest).associateBy { it.range.first }
+        if (fields.isEmpty()) return emptySequence()
+        val writes = codeMatches(localAssignment, beforeRequest).filter { it.groupValues[1] == "da1" }
+        val firstField = fields.keys.first()
+        if (writes.any { write ->
+                val start = write.range.first
+                start !in fields && (start >= firstField || defaultTimestamp.matchAt(beforeRequest, write.range.last + 1) == null)
+            }) {
+            throw StructureChanged(updatedFieldChanged)
+        }
+        return fields.values.asSequence().map { it.groupValues[1] }
+    }
+
+    private fun updatedField(scripts: List<String>, functions: List<ScriptFunction>, requestName: String?): String {
+        val cached = if (requestName == null) emptySequence() else {
+            val lookup = timetableCall(requestName)
+            functions.asSequence().mapNotNull { rendererBody(it.body) }.flatMap { body ->
+                val request = codeMatches(lookup, body).firstOrNull() ?: return@flatMap emptySequence()
+                cachedTimestampFields(body.substring(0, request.range.first))
+            }
+        }
+        return (fieldCandidates(legacyUpdatedField, scripts) + cached).distinct().take(2).toList().singleOrNull()
+            ?: throw StructureChanged(updatedFieldChanged)
+    }
+
+    private fun renderedSlotField(body: String, assignments: List<MatchResult>, name: String): Pair<String, String>? =
+        assignments.filter { it.groupValues[1] == name }.map { assignment ->
+            val read = slotRead.matchAt(body, assignment.range.last + 1) ?: return null
+            read.groupValues[1] to read.groupValues[2]
+        }.distinct().singleOrNull()
+
+    private fun timetableFields(scripts: List<String>, functions: List<ScriptFunction>): Pair<String, String> {
+        val oldCurrent = fieldCandidates(legacyCurrentField, scripts).distinct().take(2).toList()
+        val oldOriginal = fieldCandidates(legacyOriginalField, scripts).distinct().take(2).toList()
+        if (oldCurrent.size > 1 || oldOriginal.size > 1) throw StructureChanged(timetableFieldsChanged)
+        val legacy = if (oldCurrent.size == 1 && oldOriginal.size == 1) oldCurrent.single() to oldOriginal.single() else null
+
+        val candidates = mutableSetOf<Pair<String, String>>()
+        legacy?.let(candidates::add)
+        for (function in functions.filter { it.firstParameter == "자료" }) {
+            val body = rendererBody(function.body) ?: continue
+            for (call in codeMatches(slotRoles, body)) {
+                val (currentName, originalName) = call.destructured
+                if (legacy != null && currentName == "일일자료" && originalName == "원자료") continue
+                val assignments = codeMatches(localAssignment, body).takeWhile { it.range.first < call.range.first }.toList()
+                // baSplit uses its first argument as the displayed lesson and its second as the original.
+                val current = renderedSlotField(body, assignments, currentName) ?: throw StructureChanged(timetableFieldsChanged)
+                val original = renderedSlotField(body, assignments, originalName) ?: throw StructureChanged(timetableFieldsChanged)
+                if (current.first != original.first || current.second == original.second) throw StructureChanged(timetableFieldsChanged)
+                candidates += current.second to original.second
+            }
+        }
+        val fields = candidates.singleOrNull() ?: throw StructureChanged(timetableFieldsChanged)
+        if (oldCurrent.any { it != fields.first } || oldOriginal.any { it != fields.second }) throw StructureChanged(timetableFieldsChanged)
+        return fields
     }
 
     private fun schoolCodeIndex(source: String, functions: List<ScriptFunction>): Pair<Int, Int> {
@@ -183,9 +281,7 @@ internal object ComciganServicePage {
     ): String {
         val prefixes = mutableSetOf<String>()
         if (requestName != null) {
-            val call = Regex(
-                """(?<![\p{L}\p{N}_$.])${Regex.escape(requestName)}\s*\(\s*sc\s*,\s*sc2\s*,\s*da1\s*,\s*r\s*,""",
-            )
+            val call = timetableCall(requestName)
             for ((name, body) in functions) {
                 if (!call.containsMatchIn(body)) continue
                 val prefixCall = Regex(
@@ -282,7 +378,8 @@ internal object ComciganServicePage {
         fun capture(name: String, pattern: String): String =
             Regex(pattern).find(source)?.groupValues?.get(1)
                 ?: throw StructureChanged("컴시간 페이지의 $name 형식이 변경됐어요.")
-        val functions = functions(source)
+        val scripts = scripts(source)
+        val functions = functions(scripts)
         val calls = functions.flatMap { function ->
             ajaxOptions.findAll(function.body).map {
                 AjaxCall(function, it.groupValues[1], function.body.substring(0, it.range.first))
@@ -323,14 +420,16 @@ internal object ComciganServicePage {
         if (encodedSearch && !encrypted) throw StructureChanged("암호화 응답 처리 형식이 변경됐어요.")
         val responseKey = if (encrypted) key(source) else null
         val (divisor, offset) = if (encrypted) schoolCodeIndex(source, functions) else null to 2
+        val requestName = timetable?.call?.function?.name
+        val updatedField = updatedField(scripts, functions, requestName)
+        val (currentField, originalField) = timetableFields(scripts, functions)
         return ServiceCodes(
             apiEndpoint, schoolSearchPrefix,
-            timetablePrefix(source, functions, timetable?.call?.function?.name, numericVersion),
+            timetablePrefix(source, functions, requestName, numericVersion),
             capture("교사", """(?<![\p{L}\p{N}_$])성명\s*=\s*(?:$SCRIPT_IDENTIFIER\s*\(\s*)?자료\.($SERVICE_FIELD)\s*\[\s*th\s*\]"""),
             capture("과목", """자료\.($SERVICE_FIELD)\s*\[\s*sb\s*\]"""),
-            capture("갱신 시각", """\bda1\s*=\s*(?:$SCRIPT_IDENTIFIER\s*\(\s*)?H시간표\.($SERVICE_FIELD)(?![\p{L}\p{N}_$])"""),
-            capture("현재 시간표", """(?<![\p{L}\p{N}_$])일일자료\s*=\s*Q자료\(\s*자료\.($SERVICE_FIELD)\s*\["""),
-            capture("원본 시간표", """(?<![\p{L}\p{N}_$])원자료\s*=\s*Q자료\(\s*자료\.($SERVICE_FIELD)\s*\["""),
+            updatedField,
+            currentField, originalField,
             responseKey, divisor, offset, format, encodedSearch, token,
             EncodedTextFields.parse(source, required = numericVersion), method,
         )
