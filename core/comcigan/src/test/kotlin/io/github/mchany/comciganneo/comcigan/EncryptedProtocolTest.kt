@@ -41,16 +41,22 @@ class EncryptedProtocolTest {
 
     private val nestedSchoolIndex = "var r = Math.floor(H학교명단 . 학교검색 [ i ] [ 0 ] / 6347) + 2;"
 
-    private fun schoolListRenderer(rows: String) = """
+    private fun schoolListRenderer(
+        rows: String,
+        column: String = "var r = Math.floor($rows[i][0]/6347)+2;",
+    ) = """
         function renderSchools($rows) {
             if ($rows.length) {
                 var header = "}";
-                var r = Math.floor($rows[i][0]/6347)+2;
+                $column
                 return $rows[i][r];
             }
         }
         renderSchools(H학교명단.학교검색);
     """.trimIndent()
+
+    private fun variableSchoolIndex(rows: String, declaration: String = "var k = 6347;") =
+        "$declaration\nvar r = Math.floor($rows[i][0] / k) + 2;"
 
     private fun pageWithSchoolIndex(script: String) =
         page().replace("var r=Math.floor(학교명단[i][0]/6347)+2;", script)
@@ -62,6 +68,68 @@ class EncryptedProtocolTest {
             assertEquals(2, serviceCodes.schoolCodeOffset)
             assertEquals(listOf(29318, 20449), ComciganParser.schools(schools, serviceCodes).map { it.code })
         }
+    }
+
+    @Test fun `replays encrypted searches and timetable with a locally declared school code divisor`() {
+        val direct = "function selectSchool() { ${variableSchoolIndex("H학교명단.학교검색")} }"
+        val renderer = schoolListRenderer("검색결과", variableSchoolIndex("검색결과", "const k = 6347;"))
+        val emptySchools = TokenFixtures.encrypt("""{"학교검색":[]}""", "enc2")
+        val selection = ClassSelection(School(29318, "테스트고", "대전"), 1, 1)
+        val expectedTimetable = ComciganParser.timetable(timetable, codes, selection, 42)
+
+        for (script in listOf(direct, renderer, "$direct\n$renderer", "$direct\n$nestedSchoolIndex")) {
+            val resolved = ComciganParser.serviceCodes(pageWithSchoolIndex(script))
+            assertEquals(6347, resolved.schoolCodeDivisor)
+            assertEquals(2, resolved.schoolCodeOffset)
+            val found = ComciganParser.schools(schools, resolved)
+            assertEquals(listOf(29318, 20449), found.map { it.code })
+            assertEquals(selection.school, found.single { it.name == "테스트고" })
+            assertTrue(ComciganParser.schools(emptySchools, resolved).isEmpty())
+            assertEquals(expectedTimetable, ComciganParser.timetable(timetable, resolved, selection, 42))
+        }
+    }
+
+    @Test fun `rejects unresolved invalid or conflicting school code divisors`() {
+        val rows = "H학교명단.학교검색"
+        for (declaration in listOf(
+            "",
+            "var other = 6347;",
+            "var k = 0;",
+            "var k = 0100;",
+            "var k = -1;",
+            "var k = 2147483648;",
+            "var k = 6000 + 347;",
+            "var k = 6347; k = 5000;",
+            "if (flag) var k = 6347;",
+        )) {
+            val error = assertFailsWith<StructureChanged>(declaration) {
+                ComciganParser.serviceCodes(pageWithSchoolIndex(variableSchoolIndex(rows, declaration)))
+            }
+            assertEquals(StructureSource.PROTOCOL, error.source)
+        }
+        val conflictingRenderer = schoolListRenderer("data", variableSchoolIndex("data", "let k = 5000;"))
+        for (script in listOf(
+            "$nestedSchoolIndex\n$conflictingRenderer",
+            "${variableSchoolIndex(rows)}\n$conflictingRenderer",
+            "$nestedSchoolIndex\n${variableSchoolIndex(rows, "")}",
+            "var k = 6347;\nfunction lookup() { ${variableSchoolIndex(rows, "")} }",
+        )) {
+            assertFailsWith<StructureChanged> { ComciganParser.serviceCodes(pageWithSchoolIndex(script)) }
+        }
+    }
+
+    @Test fun `ignores school code formulas in comments strings and unrelated renderers`() {
+        val decoy = "var k = 5000; var r = Math.floor(학교명단[i][0] / k) + 4;"
+        val script = """
+            /* $decoy */
+            var message = "$decoy";
+            function renderOther(data) { var k = 5000; var r = Math.floor(data[i][0] / k) + 4; }
+            renderOther(other.rows);
+            $nestedSchoolIndex
+        """.trimIndent()
+        val resolved = ComciganParser.serviceCodes(pageWithSchoolIndex(script))
+        assertEquals(6347, resolved.schoolCodeDivisor)
+        assertEquals(2, resolved.schoolCodeOffset)
     }
 
     @Test fun `accepts equivalent school equations and ignores unrelated calculations`() {

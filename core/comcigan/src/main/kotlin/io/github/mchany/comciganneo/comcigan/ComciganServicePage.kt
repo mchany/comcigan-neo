@@ -57,8 +57,10 @@ internal object ComciganServicePage {
     private const val formulaEnd =
         """(?=\s*(?:[;,)}]|</script>|\z)|[ \t]*[\r\n](?!\s*(?:[-+*/%&|^=<>?:.(\[`]|(?:in|instanceof)\b)))"""
     private val schoolCodeFormula = Regex(
-        """(?<![\p{L}\p{N}_$.])Math\s*\.\s*floor\s*\(\s*($identifierPath)""" +
-            """\s*\[\s*i\s*]\s*\[\s*0\s*]\s*/\s*([0-9]+)\s*\)\s*\+\s*([0-9]+)$formulaEnd""",
+        """(?<![\p{L}\p{N}_$.])(?:(?:var|let|const)\s+(?<variable>$SCRIPT_IDENTIFIER)\s*=\s*""" +
+            """(?<value>0|[1-9][0-9]*)\s*;\s*(?:var|let|const)\s+$SCRIPT_IDENTIFIER\s*=\s*)?""" +
+            """Math\s*\.\s*floor\s*\(\s*(?<rows>$identifierPath)\s*\[\s*i\s*]\s*\[\s*0\s*]\s*/\s*""" +
+            """(?<divisor>[0-9]+|$SCRIPT_IDENTIFIER)\s*\)\s*\+\s*(?<offset>[0-9]+)$formulaEnd""",
     )
     private const val scriptLiteralOrComment =
         """//[^\r\n]*|/\*[\s\S]*?\*/|"(?:[^"\\\r\n]++|\\[\s\S])*+"|'(?:[^'\\\r\n]++|\\[\s\S])*+'|""" +
@@ -255,25 +257,41 @@ internal object ComciganServicePage {
         return fields
     }
 
-    private fun schoolCodeIndex(source: String, functions: List<ScriptFunction>): Pair<Int, Int> {
-        val direct = schoolCodeFormula.findAll(source).filter { match ->
-            val rows = match.groupValues[1]
-            rows == "학교명단" || rows.substringAfterLast('.', "").trim() == "학교검색"
-        }
-        // A generic parameter is a school list when its caller passes the search result array.
-        val renderers = schoolListCall.findAll(source).map { it.groupValues[1] }.toSet()
-        val aliases = functions.asSequence().filter { it.name in renderers }.flatMap { function ->
-            val body = rendererBody(function.body) ?: return@flatMap emptySequence()
-            schoolCodeFormula.findAll(body).filter { it.groupValues[1] == function.firstParameter }
-        }
-        return (direct + aliases).map { match ->
-            val divisor = match.groupValues[2].toIntOrNull()
-            val offset = match.groupValues[3].toIntOrNull()
+    private fun schoolCodeCandidates(
+        source: String, matchesRows: (String) -> Boolean,
+    ): Sequence<Pair<Int, Int>> = codeMatches(schoolCodeFormula, source)
+        .filter { matchesRows(it.groups["rows"]!!.value) }
+        .map { match ->
+            val operand = match.groups["divisor"]!!.value
+            val divisor = if (operand == match.groups["variable"]?.value) {
+                // Require a separate declaration statement before the calculation.
+                var preceding = match.range.first - 1
+                while (preceding >= 0 && source[preceding].isWhitespace()) preceding--
+                if (preceding >= 0 && source[preceding] !in ";{}") throw StructureChanged(schoolCodeIndexChanged)
+                match.groups["value"]!!.value.toIntOrNull()
+            } else {
+                operand.toIntOrNull()
+            }
+            val offset = match.groups["offset"]!!.value.toIntOrNull()
             if (divisor == null || divisor <= 0 || offset == null || offset !in 0..64) {
                 throw StructureChanged(schoolCodeIndexChanged)
             }
             divisor to offset
-        }.distinct().take(2).toList().singleOrNull() ?: throw StructureChanged(schoolCodeIndexChanged)
+        }
+
+    private fun schoolCodeIndex(scripts: List<String>, functions: List<ScriptFunction>): Pair<Int, Int> {
+        val direct = scripts.asSequence().flatMap { script ->
+            schoolCodeCandidates(script) { rows ->
+                rows == "학교명단" || rows.substringAfterLast('.', "").trim() == "학교검색"
+            }
+        }
+        // A generic parameter is a school list when its caller passes the search result array.
+        val renderers = scripts.asSequence().flatMap { codeMatches(schoolListCall, it) }.map { it.groupValues[1] }.toSet()
+        val aliases = functions.asSequence().filter { it.name in renderers }.flatMap { function ->
+            val body = rendererBody(function.body) ?: return@flatMap emptySequence()
+            schoolCodeCandidates(body) { it == function.firstParameter }
+        }
+        return (direct + aliases).distinct().take(2).toList().singleOrNull() ?: throw StructureChanged(schoolCodeIndexChanged)
     }
 
     private fun timetablePrefix(
@@ -419,7 +437,7 @@ internal object ComciganServicePage {
         val encrypted = source.contains("CryptoJS.AES.decrypt")
         if (encodedSearch && !encrypted) throw StructureChanged("암호화 응답 처리 형식이 변경됐어요.")
         val responseKey = if (encrypted) key(source) else null
-        val (divisor, offset) = if (encrypted) schoolCodeIndex(source, functions) else null to 2
+        val (divisor, offset) = if (encrypted) schoolCodeIndex(scripts, functions) else null to 2
         val requestName = timetable?.call?.function?.name
         val updatedField = updatedField(scripts, functions, requestName)
         val (currentField, originalField) = timetableFields(scripts, functions)
